@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Samantha</string>
+
+    <string name="status_idle">Toca el orbe para hablar</string>
+    <string name="status_listening">Escuchando…</string>
+    <string name="status_processing">Procesando…</string>
+    <string name="status_thinking">Pensando…</string>
+    <string name="status_transcribing">Transcribiendo…</string>
+    <string name="status_speaking">Hablando…</string>
+    <string name="status_done">Listo</string>
+    <string name="status_error">No te escuché. Intenta de nuevo.</string>
+
+    <string name="button_listen">Escuchar</string>
+    <string name="button_stop">Detener</string>
+    <string name="greeting_text">Hola Samantha</string>
+    <string name="greeting_text_en">Hello Samantha</string>
+
+    <string name="transcript_placeholder">Lo que digas aparecerá aquí.</string>
+    <string name="permission_needed">Necesito acceso al micrófono para escucharte.</string>
+    <string name="recognition_unavailable">Este dispositivo no tiene reconocimiento de voz disponible. Instala o activa el servicio de voz de Google.</string>
+    <string name="error_no_match">No te escuché. Intenta de nuevo.</string>
+    <string name="error_network">Sin conexión para el reconocimiento de voz.</string>
+    <string name="error_busy">El reconocedor está ocupado. Espera un momento.</string>
+    <string name="error_permissions">Falta el permiso de micrófono.</string>
+    <string name="error_server">El servicio de voz falló. Intenta de nuevo.</string>
+    <string name="error_generic">Error de reconocimiento (%1$d).</string>
+    <string name="error_tts">No hay voz en español instalada en el teléfono.</string>
+    <string name="error_auth">La API key no es válida. Revísala en Ajustes.</string>
+    <string name="error_timeout">El modelo tardó demasiado en responder.</string>
+    <string name="error_empty_reply">El modelo no devolvió texto. Intenta de nuevo.</string>
+    <string name="error_generic_llm">No pude consultar el modelo: %1$s</string>
+
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_api">API key de OpenCode Go</string>
+    <string name="settings_model">Modelo</string>
+    <string name="settings_language">Idioma de voz y micrófono</string>
+    <string name="language_es">Español</string>
+    <string name="language_en">English</string>
+    <string name="settings_close">Cerrar</string>
+    <string name="settings_auto_listen">Escuchar al terminar de hablar</string>
+    <string name="settings_auto_listen_hint">Reabre el micrófono después de cada respuesta.</string>
+    <string name="settings_voice">Voz del sistema</string>
+    <string name="settings_voice_auto">Automática (mejor disponible)</string>
+    <string name="settings_hint">La key se guarda solo en este teléfono. Tu nombre se aprende hablando.</string>
+    <string name="settings_save">Guardar</string>
+    <string name="settings_test_phrase">Hola, soy Samantha. Así suena mi voz.</string>
+    <string name="settings_test_phrase_en">Hello, I am Samantha. This is how my voice sounds.</string>
+    <string name="settings_voice_close">Cerrar</string>
+    <string name="settings_test_model">Probar modelo</string>
+    <string name="settings_testing">Consultando el modelo…</string>
+    <string name="settings_test_ok">OK: %1$s</string>
+    <string name="settings_test_fail">Error: %1$s</string>
+    <string name="settings_key_required">Configura tu API key para que Samantha pueda responder.</string>
+    <string name="settings_memory_info">Recuerdos guardados: %1$d</string>
+    <string name="settings_clear_memory">Borrar memoria</string>
+    <string name="settings_clear_title">Borrar memoria</string>
+    <string name="settings_clear_message">Se borrarán los recuerdos, el historial y tu nombre. La próxima conversación te preguntará cómo te llamas.</string>
+    <string name="settings_clear_ok">Borrar</string>
+
+    <string name="memory_saved">Lo recordaré.</string>
+    <string name="memory_already">Ya lo tenía en cuenta.</string>
+    <string name="memory_forgotten">Lo olvidé.</string>
+    <string name="memory_unknown">No tenía eso guardado.</string>
+    <string name="name_question_fallback"> Por cierto, ¿cómo te llamas?</string>
+</resources>

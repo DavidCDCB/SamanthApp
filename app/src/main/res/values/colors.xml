@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0B1017</color>
+    <color name="bg_soft">#111A24</color>
+    <color name="text">#E7EDF5</color>
+    <color name="text_muted">#8CA0B3</color>
+    <color name="cyan">#22D3EE</color>
+    <color name="cyan_dark">#0E7490</color>
+    <color name="cream">#F5E6C8</color>
+    <color name="red">#F87171</color>
+    <color name="ic_launcher_background">#0B1017</color>
+</resources>

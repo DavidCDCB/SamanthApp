@@ -1,0 +1,49 @@
+# ── Android / Gradle ────────────────────────────────────────────────
+# Cachés y salidas de compilación: se regeneran con Gradle.
+.gradle/
+.kotlin/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Binarios generados (APK/AAB, dex, clases, perfiles)
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.hprof
+
+# APKs release locales (dist\Samantha-x.y.z-android16.apk)
+/dist/
+
+# ── Configuración local de la máquina ───────────────────────────────
+local.properties
+keystore.properties
+signing.properties
+
+# ── Firmas y credenciales ───────────────────────────────────────────
+*.jks
+*.keystore
+*.p12
+*.pfx
+google-services.json
+
+# ── Android Studio / IDE ────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+out/
+
+# ── Sistema operativo y temporales ──────────────────────────────────
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+*.log
