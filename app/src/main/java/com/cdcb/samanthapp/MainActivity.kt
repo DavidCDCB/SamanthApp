@@ -5,8 +5,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.app.Dialog
 import android.app.NotificationManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -79,6 +81,9 @@ class MainActivity : AppCompatActivity() {
     private var wakeWordEngine: WakeWordEngine? = null
     private var wakeLaunch = false
     private var enPrimerPlano = false
+    private var autoOpenStatusView: TextView? = null
+    private var autoOpenButtonView: MaterialButton? = null
+    private var wakeModeGroupView: MaterialButtonToggleGroup? = null
     private val wakeWordRunnable = Runnable { iniciarWakeWordSiPuede() }
 
     private val prefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
@@ -500,6 +505,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Estado del permiso «Mostrar encima de otras apps» para abrir sola. */
+    private fun actualizarPermisoAutoOpen() {
+        val status = autoOpenStatusView ?: return
+        val button = autoOpenButtonView ?: return
+        val permitido = Settings.canDrawOverlays(this)
+        status.visibility = View.VISIBLE
+        button.visibility = View.VISIBLE
+        status.text = getString(
+            if (permitido) R.string.settings_wake_auto_open_granted
+            else R.string.settings_wake_auto_open_missing
+        )
+        button.text = getString(
+            if (permitido) R.string.settings_wake_auto_open_button_granted
+            else R.string.settings_wake_auto_open_button
+        )
+        button.isEnabled = !permitido
+    }
+
     // ── reconocimiento ────────────────────────────────────────────────
 
     private fun toggleListening() {
@@ -900,6 +923,12 @@ class MainActivity : AppCompatActivity() {
         val wakeOptions = vista.findViewById<View>(R.id.wakeWordOptions)
         val wakeModeGroup = vista.findViewById<MaterialButtonToggleGroup>(R.id.wakeModeGroup)
         val wakeModelStatus = vista.findViewById<TextView>(R.id.wakeModelStatus)
+        val autoOpenButton = vista.findViewById<MaterialButton>(R.id.autoOpenButton)
+        val autoOpenStatus = vista.findViewById<TextView>(R.id.autoOpenStatus)
+
+        autoOpenStatusView = autoOpenStatus
+        autoOpenButtonView = autoOpenButton
+        wakeModeGroupView = wakeModeGroup
 
         keyInput.setText(apiKey())
         modelInput.setText(
@@ -917,7 +946,28 @@ class MainActivity : AppCompatActivity() {
         wakeSwitch.setOnCheckedChangeListener { _, checked ->
             wakeOptions.visibility = if (checked) View.VISIBLE else View.GONE
         }
+        wakeModeGroup.addOnButtonCheckedListener { _, _, _ ->
+            actualizarPermisoAutoOpen()
+        }
+        autoOpenButton.setOnClickListener {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            try {
+                startActivity(intent)
+            } catch (e: Exception) {
+                Log.w("Samantha", "no se abrió el permiso de overlay: ${e.message}")
+                startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+        }
         actualizarEstadoModelo(wakeModelStatus)
+        actualizarPermisoAutoOpen()
 
         val dialogo = Dialog(this, R.style.Theme_SamanthApp_FullScreenDialog)
         dialogo.setContentView(vista)
@@ -925,6 +975,9 @@ class MainActivity : AppCompatActivity() {
         settingsDialog = dialogo
         dialogo.setOnDismissListener {
             settingsDialog = null
+            autoOpenStatusView = null
+            autoOpenButtonView = null
+            wakeModeGroupView = null
             previewTts?.stop()
             pantallaCompleta(window)
             syncWakeWord()
@@ -1200,6 +1253,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         enPrimerPlano = true
+        WakeWordSettings.setAppVisible(this, true)
         getSystemService(NotificationManager::class.java)
             ?.cancel(WakeWordService.ALERT_ID)
         pantallaCompleta(window)
@@ -1212,6 +1266,7 @@ class MainActivity : AppCompatActivity() {
             pararServicioWakeWord()
         }
         syncWakeWord(inmediato = true)
+        actualizarPermisoAutoOpen()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -1224,6 +1279,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         enPrimerPlano = false
+        WakeWordSettings.setAppVisible(this, false)
         binding.root.removeCallbacks(autoListenRunnable)
         binding.root.removeCallbacks(wakeWordRunnable)
         wakeWordEngine?.detener()

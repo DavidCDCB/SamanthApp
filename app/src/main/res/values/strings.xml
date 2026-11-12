@@ -52,6 +52,10 @@
     <string name="settings_wake_download_ok">Modelo de voz descargado.</string>
     <string name="settings_wake_download_error">No se pudo descargar el modelo: %1$s</string>
     <string name="settings_wake_service_error">No se pudo iniciar el servicio en segundo plano.</string>
+    <string name="settings_wake_auto_open_button">Permitir mostrar sobre otras apps</string>
+    <string name="settings_wake_auto_open_button_granted">Mostrar sobre otras apps: concedido</string>
+    <string name="settings_wake_auto_open_granted">Permiso concedido. Si Android lo permite, la app se abrirá sola; si no, verás el aviso «Te escucho».</string>
+    <string name="settings_wake_auto_open_missing">Sin «Mostrar encima de otras apps», Android muestra el aviso «Te escucho». Busca Samantha en la lista y activa el permiso.</string>
     <string name="settings_wake_notification_denied">Sin permiso de notificaciones, Android puede ocultar el aviso del servicio en segundo plano.</string>
     <string name="wake_word_channel">Palabra de activación</string>
     <string name="wake_word_channel_desc">Aviso mientras Samantha escucha «Hola Samantha» en segundo plano.</string>

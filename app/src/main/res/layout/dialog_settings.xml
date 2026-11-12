@@ -200,6 +200,21 @@
                     android:textColor="@color/text_muted"
                     android:textSize="12sp" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/autoOpenButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_wake_auto_open_button" />
+
+                <TextView
+                    android:id="@+id/autoOpenStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_wake_auto_open_missing"
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp" />
+
                 <TextView
                     android:id="@+id/wakeModelStatus"
                     android:layout_width="match_parent"

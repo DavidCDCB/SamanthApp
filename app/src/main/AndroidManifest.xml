@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Permite que el servicio abra la app sola en Android 14+ si el usuario
+         concede «Mostrar encima de otras apps». -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- API 30+: sin esto, isRecognitionAvailable() puede devolver false
          porque el paquete del servicio de voz no es visible. -->

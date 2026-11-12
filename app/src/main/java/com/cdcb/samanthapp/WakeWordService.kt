@@ -61,7 +61,15 @@ class WakeWordService : Service() {
                 return@launch
             }
             modeloListo = true
-            if (engine === nuevo && debeEscuchar) nuevo.iniciar()
+            if (engine === nuevo && debeEscuchar) {
+                nuevo.iniciar()
+            } else if (engine === nuevo &&
+                !WakeWordSettings.appVisible(this@WakeWordService)
+            ) {
+                debeEscuchar = true
+                actualizarNotificacion(activa = true)
+                nuevo.iniciar()
+            }
         }
     }
 
@@ -86,11 +94,16 @@ class WakeWordService : Service() {
                 return START_NOT_STICKY
             }
             else -> {
-                // Arranque desde la actividad: queda en espera hasta que la
-                // app pase a segundo plano.
-                debeEscuchar = false
-                engine?.detener()
-                actualizarNotificacion(activa = false)
+                // Arranque desde la actividad: si la app ya no está visible,
+                // escucha; si sigue visible, queda en espera.
+                val visible = WakeWordSettings.appVisible(this)
+                debeEscuchar = !visible
+                if (debeEscuchar && modeloListo) {
+                    engine?.iniciar()
+                } else {
+                    engine?.detener()
+                }
+                actualizarNotificacion(activa = debeEscuchar)
             }
         }
         return START_NOT_STICKY
@@ -98,9 +111,19 @@ class WakeWordService : Service() {
 
     private fun despertar() {
         Log.i(TAG, "wake word detectada en segundo plano")
-        // Android 14+ bloquea abrir actividades desde un servicio, así que
-        // se muestra un aviso de alta prioridad; al tocarlo se abre la app.
         mostrarAlerta()
+        // Intento best-effort de abrir la app; si Android lo bloquea, el
+        // aviso de alta prioridad queda para tocar.
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(WakeWordSettings.EXTRA_WAKE_WORD, true)
+        }
+        try {
+            startActivity(intent)
+            Log.i(TAG, "intento de abrir MainActivity desde segundo plano")
+        } catch (e: Exception) {
+            Log.w(TAG, "no se pudo abrir MainActivity: ${e.message}")
+        }
         stopSelf()
     }
 

@@ -45,9 +45,10 @@ completo **voz → modelo → voz**.
   ni servicio en segundo plano.
 - **Segundo plano**: Samantha mantiene un servicio en primer plano con una
   notificación permanente y consume más batería. Al detectar la frase muestra
-  el aviso **«Te escucho»**; en algunos equipos la app se abre sola y en otros
-  hay que tocar el aviso, porque Android 14+ bloquea que un servicio abra
-  actividades por su cuenta. Al tocarlo, la app se abre y empieza a escuchar.
+  el aviso **«Te escucho»** e intenta abrir la app; si el sistema lo permite, se
+  abre sola. Para aumentar las probabilidades, concede **«Mostrar encima de
+  otras apps»** desde Ajustes → «Permitir apertura automática». Android 14+ y
+  MIUI pueden bloquearlo igualmente: en ese caso queda el aviso para tocar.
 - El audio de la palabra de activación se procesa en el teléfono; no se envía
   a ningún servidor.
 - Si fuerzas la detención de la app, el servicio en segundo plano también se
@@ -162,7 +163,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat :app:assembleRelease
 ```
 
-Salida: `dist\Samantha-2.3.4-android16.apk` (también en
+Salida: `dist\Samantha-2.3.5-android16.apk` (también en
 `app\build\outputs\apk\release\app-release.apk`).
 
 - `minSdk 26` → Android 8.0 en adelante, incluido **Android 16** (API 36).
