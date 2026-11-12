@@ -32,6 +32,24 @@ object FactList {
     }
 }
 
+/** Reglas puras sobre el historial de conversación. */
+object HistoryRules {
+    /**
+     * Quita el último intercambio completo: la respuesta del asistente y el
+     * mensaje de usuario que la originó. Si la lista no termina en una
+     * respuesta, no se toca.
+     */
+    fun dropLastExchange(messages: List<Message>): List<Message> {
+        if (messages.lastOrNull()?.role != "assistant") return messages
+        val sinRespuesta = messages.dropLast(1)
+        return if (sinRespuesta.lastOrNull()?.role == "user") {
+            sinRespuesta.dropLast(1)
+        } else {
+            sinRespuesta
+        }
+    }
+}
+
 /**
  * Memoria persistente de la app: nombre del usuario, recuerdos y últimos
  * turnos de conversación. Vive en SharedPreferences privadas.

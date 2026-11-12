@@ -149,3 +149,36 @@ class MemoryCommandsTest {
         assertNull(MemoryCommands.parse("hola Samantha"))
     }
 }
+
+class HistoryRulesTest {
+
+    @Test
+    fun quitaElUltimoIntercambioCompleto() {
+        val historial = listOf(
+            Message("user", "hola"),
+            Message("assistant", "hola, ¿cómo estás?"),
+            Message("user", "cuéntame algo"),
+            Message("assistant", "había una vez..."),
+        )
+        assertEquals(
+            listOf(
+                Message("user", "hola"),
+                Message("assistant", "hola, ¿cómo estás?"),
+            ),
+            HistoryRules.dropLastExchange(historial)
+        )
+    }
+
+    @Test
+    fun noTocaUnHistorialQueNoTerminaEnRespuesta() {
+        val historial = listOf(Message("user", "hola"))
+        assertEquals(historial, HistoryRules.dropLastExchange(historial))
+        assertEquals(emptyList<Message>(), HistoryRules.dropLastExchange(emptyList()))
+    }
+
+    @Test
+    fun quitaSoloLaRespuestaSiNoHayUsuarioAntes() {
+        val historial = listOf(Message("assistant", "hola"))
+        assertEquals(emptyList<Message>(), HistoryRules.dropLastExchange(historial))
+    }
+}

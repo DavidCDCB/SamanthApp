@@ -10,12 +10,19 @@ completo **voz → modelo → voz**.
 
 ## Controles
 
-- **Al abrir la app** (con la API key configurada) Samantha inicia la
-  conversación sola: saluda, pregunta el nombre si no lo sabe y el prompt de
-  ese turno ya lleva la **fecha y hora actuales**. Es el mismo comportamiento
-  del asistente de PC.
+- **Al abrir la app no hay saludo automático.** La conversación empieza
+  cuando tocas el orbe y hablas. En ese primer turno el prompt ya incluye la
+  **fecha y hora actuales**, y se recalculan en cada mensaje.
+- Si **«Hola Samantha»** está activada, el micrófono se abre al iniciar la app
+  (unos 0,3 s después de quedar visible) y Vosk se queda escuchando la palabra
+  sin que tengas que tocar el orbe. Al detectarla empieza el turno de voz.
+- **La app se muestra a pantalla completa**: sin barra de estado ni de
+  navegación. Si deslizas desde el borde superior o inferior, aparecen
+  temporalmente y se vuelven a ocultar.
 - **Toca el orbe** para empezar a hablar y tócalo otra vez para detenerte.
-  Mientras Samantha habla, un toque corta la voz y vuelve a escuchar.
+  Mientras Samantha habla, un toque corta la voz y vuelve a escuchar. Ese
+  intercambio interrumpido se borra del historial: el modelo no lo tiene en
+  cuenta en el siguiente turno.
 - La respuesta aparece en una tarjeta con **scroll vertical propio**: si es
   larga, se desplaza dentro de la tarjeta (hasta 240 dp de alto) sin cortar el
   texto, y el orbe no se mueve.
@@ -26,8 +33,25 @@ completo **voz → modelo → voz**.
   idioma en que le hablas** (inglés si le hablas en inglés, español si en
   español); el modo elegido es el fallback si el mensaje es ambiguo.
 - En Ajustes puedes activar **Escuchar al terminar de hablar**: al acabar cada
-  respuesta, el micrófono se reabre solo (0,7 s de espera anti-eco). Si no
-  hablas, vuelve a esperar sin mostrar error.
+  respuesta, hay un margen de **200 ms** y luego se abre **una sola ventana de
+  escucha** (unos 5 s). Si no hablas, vuelve a esperar sin abrir otra ventana.
+
+## «Hola Samantha» con Vosk
+
+- En **Ajustes → Escuchar «Hola Samantha»** puedes activar la palabra de
+  activación. La primera vez descarga un modelo español pequeño de Vosk
+  (~39 MB, licencia Apache 2.0); después funciona sin internet.
+- **App abierta**: Vosk escucha solo mientras ves el orbe. No hay notificación
+  ni servicio en segundo plano.
+- **Segundo plano**: Samantha mantiene un servicio en primer plano con una
+  notificación permanente y consume más batería. Al detectar la frase muestra
+  el aviso **«Te escucho»**; en algunos equipos la app se abre sola y en otros
+  hay que tocar el aviso, porque Android 14+ bloquea que un servicio abra
+  actividades por su cuenta. Al tocarlo, la app se abre y empieza a escuchar.
+- El audio de la palabra de activación se procesa en el teléfono; no se envía
+  a ningún servidor.
+- Si fuerzas la detención de la app, el servicio en segundo plano también se
+  detiene hasta que vuelvas a abrirla.
 
 ## Requisitos
 
@@ -35,6 +59,8 @@ completo **voz → modelo → voz**.
 - Servicio de reconocimiento de voz (Google o el del fabricante).
 - Voz en español instalada en el teléfono (Ajustes → Idiomas → Salida de voz).
 - Conexión a internet y una **API key de OpenCode Go**.
+- Para «Hola Samantha», conexión la primera vez para descargar el modelo Vosk
+  (~39 MB); luego funciona sin internet.
 
 ## Configuración (primera vez)
 
@@ -88,7 +114,7 @@ y el prompt no debe prometer lo que no puede hacer.
 
 En cada petición `SamanthaApi.composeSystemPrompt(...)` añade al final:
 
-- `## Fecha y hora actuales` (se calcula en el momento; también en el saludo de apertura),
+- `## Fecha y hora actuales` (se calcula en el momento de cada mensaje),
 - `## La persona` (nombre guardado o instrucción de preguntarlo una vez),
 - `## Recuerdos guardados` (memoria persistente),
 - `## Idioma de esta conversación` (responde en el idioma del usuario; el modo
@@ -136,7 +162,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat :app:assembleRelease
 ```
 
-Salida: `dist\Samantha-2.2.4-android16.apk` (también en
+Salida: `dist\Samantha-2.3.4-android16.apk` (también en
 `app\build\outputs\apk\release\app-release.apk`).
 
 - `minSdk 26` → Android 8.0 en adelante, incluido **Android 16** (API 36).

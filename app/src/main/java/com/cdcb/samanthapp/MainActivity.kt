@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.app.Dialog
+import android.app.NotificationManager
+import android.os.Build
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -15,6 +17,8 @@ import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
+import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
@@ -32,10 +36,9 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.cdcb.samanthapp.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.ConnectException
@@ -62,7 +65,6 @@ class MainActivity : AppCompatActivity() {
     private var history = mutableListOf<Message>()
     private var expectingName = false
     private var nameAskedThisSession = false
-    private var greetingJob: Job? = null
     private var pendingSpeech: String? = null
     private lateinit var memory: MemoryStore
     private lateinit var appConfig: SamanthaConfigData
@@ -71,6 +73,13 @@ class MainActivity : AppCompatActivity() {
     private var settingsDialog: Dialog? = null
     private var previewTts: TextToSpeech? = null
     private var languageMode = "es"
+
+    private var wakeWordEnabled = false
+    private var wakeWordBackground = false
+    private var wakeWordEngine: WakeWordEngine? = null
+    private var wakeLaunch = false
+    private var enPrimerPlano = false
+    private val wakeWordRunnable = Runnable { iniciarWakeWordSiPuede() }
 
     private val prefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
 
@@ -83,12 +92,26 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                Toast.makeText(
+                    this,
+                    R.string.settings_wake_notification_denied,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        wakeLaunch = intent?.getBooleanExtra(WakeWordSettings.EXTRA_WAKE_WORD, false) == true
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        pantallaCompleta(window)
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
         applyInsets()
 
@@ -98,6 +121,18 @@ class MainActivity : AppCompatActivity() {
         autoListen = prefs.getBoolean(KEY_AUTO_LISTEN, false)
         languageMode = prefs.getString(KEY_LANGUAGE, "es")
             ?.takeIf { it == "en" } ?: "es"
+        wakeWordEnabled = prefs.getBoolean(WakeWordSettings.KEY_ENABLED, false)
+        wakeWordBackground = prefs.getBoolean(WakeWordSettings.KEY_BACKGROUND, false)
+        wakeWordEngine = WakeWordEngine(
+            this,
+            onWake = { alDetectarWakeWord() },
+            onError = { mensaje ->
+                Log.w("Samantha", mensaje)
+                if (!isFinishing) {
+                    Toast.makeText(this, mensaje, Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
 
         val recognizer = SpeechRecognizer.createSpeechRecognizer(this)
         recognizer.setRecognitionListener(recognitionListener)
@@ -112,7 +147,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         initTts()
-        scheduleGreeting()
+        if (wakeLaunch) {
+            binding.root.postDelayed({ lanzarDesdeWakeWord() }, 800L)
+        }
         // Primer arranque sin API key: abre Ajustes para configurarla.
         if (apiKey().isBlank()) {
             binding.root.postDelayed({
@@ -123,34 +160,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }, 600L)
         }
-    }
-
-    // ── saludo de apertura ────────────────────────────────────────────
-
-    /**
-     * Al abrir la app (con key configurada) inicia una conversación sola,
-     * como el asistente de PC: saluda, pregunta el nombre si no lo sabe y el
-     * prompt ya lleva la fecha y la hora de este momento.
-     */
-    private fun scheduleGreeting() {
-        if (apiKey().isBlank()) return
-        greetingJob = lifecycleScope.launch {
-            delay(1400)
-            if (listening || !enReposo(binding.orb.state)) return@launch
-            startGreeting()
-        }
-    }
-
-    private fun startGreeting() {
-        if (apiKey().isBlank()) return
-        val saludo = getString(
-            if (languageMode == "en") R.string.greeting_text_en else R.string.greeting_text
-        )
-        binding.transcript.text = saludo
-        binding.transcript.visibility = View.VISIBLE
-        binding.responseScroll.visibility = View.GONE
-        updateUi(OrbView.State.THINKING)
-        askModel(saludo)
     }
 
     // ── TTS ────────────────────────────────────────────────────────────
@@ -373,8 +382,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun finishSpeaking() {
-        updateUi(estadoReposo())
+        // Primero el auto-listen para que su ventana gane la carrera contra
+        // el wake word: si el micrófono se reabre solo, Vosk no compite.
+        Log.i("Samantha", "TTS terminó; auto-listen=$autoListen")
         scheduleAutoListen()
+        updateUi(estadoReposo())
     }
 
     private val autoListenRunnable = Runnable { maybeAutoListen() }
@@ -382,8 +394,8 @@ class MainActivity : AppCompatActivity() {
     private fun scheduleAutoListen() {
         if (!autoListen) return
         binding.root.removeCallbacks(autoListenRunnable)
-        // Pequeña espera anti-eco después de que termina el audio.
-        binding.root.postDelayed(autoListenRunnable, 700L)
+        // 200 ms de margen para que no se cuele la cola del TTS.
+        binding.root.postDelayed(autoListenRunnable, AUTO_LISTEN_DELAY_MS)
     }
 
     private fun maybeAutoListen() {
@@ -398,12 +410,102 @@ class MainActivity : AppCompatActivity() {
         startListening(automatic = true)
     }
 
+    // ── palabra de activación ──────────────────────────────────────────
+
+    /** Decide si Vosk debe estar escuchando según el estado y los ajustes. */
+    private fun syncWakeWord(inmediato: Boolean = false) {
+        binding.root.removeCallbacks(wakeWordRunnable)
+        if (!wakeWordEnabled || wakeLaunch || !enPrimerPlano) {
+            wakeWordEngine?.detener()
+            return
+        }
+        val libre = enReposo(binding.orb.state) &&
+            !listening && settingsDialog?.isShowing != true
+        if (!libre) {
+            wakeWordEngine?.detener()
+            return
+        }
+        binding.root.postDelayed(
+            wakeWordRunnable,
+            if (inmediato) WAKE_WORD_STARTUP_DELAY_MS else WAKE_WORD_DELAY_MS
+        )
+    }
+
+    private fun iniciarWakeWordSiPuede() {
+        if (!wakeWordEnabled || wakeLaunch || listening) return
+        if (!enReposo(binding.orb.state)) return
+        if (settingsDialog?.isShowing == true) return
+        Log.i("Samantha", "wake word: inicio de la escucha")
+        wakeWordEngine?.iniciar()
+    }
+
+    private fun alDetectarWakeWord() {
+        if (isFinishing || listening || !enPrimerPlano) return
+        if (!enReposo(binding.orb.state)) return
+        binding.orb.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        Log.i("Samantha", "wake word: abro el micrófono")
+        startListening(automatic = true)
+    }
+
+    private fun lanzarDesdeWakeWord() {
+        if (!wakeLaunch || isFinishing) return
+        wakeLaunch = false
+        if (!listening && enReposo(binding.orb.state)) {
+            startListening(automatic = true)
+        } else {
+            syncWakeWord()
+        }
+    }
+
+    private fun iniciarServicioWakeWord() {
+        if (!wakeWordEnabled || !wakeWordBackground) return
+        try {
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, WakeWordService::class.java)
+            )
+        } catch (e: Exception) {
+            Log.w("Samantha", "no se pudo iniciar el servicio de wake word: ${e.message}")
+            Toast.makeText(
+                this,
+                R.string.settings_wake_service_error,
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun pararServicioWakeWord() {
+        stopService(Intent(this, WakeWordService::class.java))
+    }
+
+    private fun accionServicioWakeWord(accion: String) {
+        if (!WakeWordService.running) return
+        try {
+            startService(
+                Intent(this, WakeWordService::class.java).setAction(accion)
+            )
+        } catch (e: Exception) {
+            Log.w("Samantha", "acción del servicio de wake word: ${e.message}")
+        }
+    }
+
+    private fun pedirPermisoNotificaciones() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     // ── reconocimiento ────────────────────────────────────────────────
 
     private fun toggleListening() {
-        greetingJob?.cancel()
-        greetingJob = null
         binding.root.removeCallbacks(autoListenRunnable)
+        binding.root.removeCallbacks(wakeWordRunnable)
+        wakeWordEngine?.detener()
         binding.orb.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
 
         if (listening) {
@@ -416,10 +518,19 @@ class MainActivity : AppCompatActivity() {
 
         // Mientras piensa o transcribe no se abre otro turno; al hablar, el
         // toque corta la voz y empieza a escuchar (barge-in).
-        when (binding.orb.state) {
+        val estado = binding.orb.state
+        when (estado) {
             OrbView.State.THINKING,
             OrbView.State.TRANSCRIBING -> return
             else -> Unit
+        }
+
+        if (estado == OrbView.State.SPEAKING) {
+            // Interrumpir una respuesta también la borra de la conversación:
+            // ese intercambio no se guarda ni se envía al modelo después.
+            tts?.stop()
+            descartarUltimoIntercambio()
+            updateUi(estadoReposo())
         }
 
         val permiso = ContextCompat.checkSelfPermission(
@@ -431,6 +542,31 @@ class MainActivity : AppCompatActivity() {
         } else {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
+    }
+
+    /**
+     * Barge-in: si se interrumpe la respuesta tocando el orbe, el intercambio
+     * interrumpido no debe quedar en la memoria ni en el próximo turno.
+     */
+    private fun descartarUltimoIntercambio() {
+        val ultimo = history.lastOrNull() ?: return
+        if (ultimo.role != "assistant") return
+        val preguntoNombre = Regex("(?i)(te llamas|tu nombre)")
+            .containsMatchIn(ultimo.content)
+        val antes = history.size
+        history = HistoryRules.dropLastExchange(history).toMutableList()
+        if (history.size == antes) return
+        // Si la respuesta interrumpida era la pregunta del nombre, se vuelve
+        // a preguntar en el siguiente turno en vez de esperar una respuesta.
+        if (preguntoNombre) {
+            expectingName = false
+            nameAskedThisSession = false
+        }
+        memory.saveHistory(history)
+        Log.i(
+            "Samantha",
+            "barge-in: intercambio descartado, quedan ${history.size} mensajes"
+        )
     }
 
     private fun startListening(automatic: Boolean = false) {
@@ -447,6 +583,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         tts?.stop()
+        binding.root.removeCallbacks(wakeWordRunnable)
+        wakeWordEngine?.detener()
         stopping = false
         listening = true
         binding.responseScroll.visibility = View.GONE
@@ -506,8 +644,9 @@ class MainActivity : AppCompatActivity() {
                 (error == SpeechRecognizer.ERROR_NO_MATCH ||
                     error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
             ) {
-                // Tras una respuesta, si no hablas, no llenamos la pantalla
-                // de errores: se queda esperando otro toque.
+                // Una sola ventana: si no hablas, vuelve a esperar un toque
+                // o a la palabra de activación, sin abrir otra ventana.
+                Log.i("Samantha", "auto-listen: sin voz, vuelvo a esperar")
                 updateUi(estadoReposo())
             } else {
                 showError(errorMessage(error))
@@ -678,8 +817,73 @@ class MainActivity : AppCompatActivity() {
 
     // ── ajustes ───────────────────────────────────────────────────────
 
+    private fun actualizarEstadoModelo(view: TextView) {
+        view.text = if (VoskModelStore.listo(this)) {
+            getString(R.string.settings_wake_model_ready)
+        } else {
+            getString(R.string.settings_wake_model_missing)
+        }
+    }
+
+    private fun descargarModelo(onDone: (Boolean) -> Unit) {
+        val vista = layoutInflater.inflate(R.layout.dialog_download, null)
+        val progreso = vista.findViewById<LinearProgressIndicator>(R.id.downloadProgress)
+        val etiqueta = vista.findViewById<TextView>(R.id.downloadLabel)
+        val dialogo = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_wake_download_title)
+            .setView(vista)
+            .setCancelable(false)
+            .create()
+        dialogo.show()
+        lifecycleScope.launch {
+            val resultado = withContext(Dispatchers.IO) {
+                runCatching {
+                    VoskModelStore.asegurar(applicationContext) { pct ->
+                        runOnUiThread {
+                            if (isFinishing) return@runOnUiThread
+                            if (pct < 0) {
+                                progreso.isIndeterminate = true
+                            } else {
+                                progreso.isIndeterminate = false
+                                progreso.setProgressCompat(pct, true)
+                                etiqueta.text = getString(
+                                    R.string.settings_wake_downloading,
+                                    pct
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            if (!isFinishing) dialogo.dismiss()
+            resultado.fold(
+                onSuccess = {
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.settings_wake_download_ok,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    onDone(true)
+                },
+                onFailure = {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(
+                            R.string.settings_wake_download_error,
+                            it.message ?: ""
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    onDone(false)
+                }
+            )
+        }
+    }
+
     private fun openSettings() {
         if (settingsDialog?.isShowing == true) return
+        binding.root.removeCallbacks(wakeWordRunnable)
+        wakeWordEngine?.detener()
         val vista = layoutInflater.inflate(R.layout.dialog_settings, null)
         val keyInput = vista.findViewById<EditText>(R.id.keyInput)
         val modelInput = vista.findViewById<EditText>(R.id.modelInput)
@@ -692,6 +896,10 @@ class MainActivity : AppCompatActivity() {
         val autoSwitch = vista.findViewById<MaterialSwitch>(R.id.autoListenSwitch)
         val languageGroup = vista.findViewById<MaterialButtonToggleGroup>(R.id.languageGroup)
         val closeButton = vista.findViewById<ImageButton>(R.id.closeSettings)
+        val wakeSwitch = vista.findViewById<MaterialSwitch>(R.id.wakeWordSwitch)
+        val wakeOptions = vista.findViewById<View>(R.id.wakeWordOptions)
+        val wakeModeGroup = vista.findViewById<MaterialButtonToggleGroup>(R.id.wakeModeGroup)
+        val wakeModelStatus = vista.findViewById<TextView>(R.id.wakeModelStatus)
 
         keyInput.setText(apiKey())
         modelInput.setText(
@@ -701,6 +909,15 @@ class MainActivity : AppCompatActivity() {
         Log.i("Samantha", "ajustes: ${memory.facts().size} recuerdos")
         autoSwitch.isChecked = autoListen
         languageGroup.check(if (languageMode == "en") R.id.languageEn else R.id.languageEs)
+        wakeSwitch.isChecked = wakeWordEnabled
+        wakeOptions.visibility = if (wakeWordEnabled) View.VISIBLE else View.GONE
+        wakeModeGroup.check(
+            if (wakeWordBackground) R.id.wakeModeBackground else R.id.wakeModeForeground
+        )
+        wakeSwitch.setOnCheckedChangeListener { _, checked ->
+            wakeOptions.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+        actualizarEstadoModelo(wakeModelStatus)
 
         val dialogo = Dialog(this, R.style.Theme_SamanthApp_FullScreenDialog)
         dialogo.setContentView(vista)
@@ -709,6 +926,8 @@ class MainActivity : AppCompatActivity() {
         dialogo.setOnDismissListener {
             settingsDialog = null
             previewTts?.stop()
+            pantallaCompleta(window)
+            syncWakeWord()
         }
         closeButton.setOnClickListener { dialogo.dismiss() }
 
@@ -774,23 +993,29 @@ class MainActivity : AppCompatActivity() {
 
         cancelButton.setOnClickListener { dialogo.dismiss() }
 
-        saveButton.setOnClickListener {
+        fun aplicarAjustes() {
             val key = keyInput.text.toString().trim()
             val modelo = modelInput.text.toString().trim().ifBlank { appConfig.model }
-            if (key.isEmpty()) {
-                keyInput.error = getString(R.string.settings_key_required)
-                return@setOnClickListener
-            }
             val nuevoIdioma =
                 if (languageGroup.checkedButtonId == R.id.languageEn) "en" else "es"
             val cambioIdioma = nuevoIdioma != languageMode
+            val nuevoWake = wakeSwitch.isChecked
+            val nuevoBackground =
+                wakeModeGroup.checkedButtonId == R.id.wakeModeBackground
+
             autoListen = autoSwitch.isChecked
-            if (!autoListen) binding.root.removeCallbacks(autoListenRunnable)
+            if (!autoListen) {
+                binding.root.removeCallbacks(autoListenRunnable)
+            }
+            wakeWordEnabled = nuevoWake
+            wakeWordBackground = nuevoBackground
             prefs.edit()
                 .putString(KEY_API, key)
                 .putString(KEY_MODEL, modelo)
                 .putBoolean(KEY_AUTO_LISTEN, autoListen)
                 .putString(KEY_LANGUAGE, nuevoIdioma)
+                .putBoolean(WakeWordSettings.KEY_ENABLED, wakeWordEnabled)
+                .putBoolean(WakeWordSettings.KEY_BACKGROUND, wakeWordBackground)
                 .apply()
             if (cambioIdioma) {
                 languageMode = nuevoIdioma
@@ -798,6 +1023,41 @@ class MainActivity : AppCompatActivity() {
             }
             updateUi(estadoReposo())
             dialogo.dismiss()
+            if (!wakeWordEnabled) {
+                wakeWordEngine?.detener()
+                wakeWordEngine?.liberar()
+                pararServicioWakeWord()
+                binding.root.postDelayed({
+                    if (!wakeWordEnabled) VoskModelHolder.liberar()
+                }, 1500L)
+            } else {
+                if (wakeWordBackground) {
+                    iniciarServicioWakeWord()
+                    accionServicioWakeWord(WakeWordService.ACTION_PAUSE)
+                    pedirPermisoNotificaciones()
+                } else {
+                    pararServicioWakeWord()
+                }
+                syncWakeWord()
+            }
+        }
+
+        saveButton.setOnClickListener {
+            val key = keyInput.text.toString().trim()
+            if (key.isEmpty()) {
+                keyInput.error = getString(R.string.settings_key_required)
+                return@setOnClickListener
+            }
+            if (wakeSwitch.isChecked && !VoskModelStore.listo(this)) {
+                descargarModelo { ok ->
+                    if (ok) {
+                        actualizarEstadoModelo(wakeModelStatus)
+                        aplicarAjustes()
+                    }
+                }
+            } else {
+                aplicarAjustes()
+            }
         }
 
         ViewCompat.setOnApplyWindowInsetsListener(vista) { v, insets ->
@@ -807,18 +1067,21 @@ class MainActivity : AppCompatActivity() {
             )
             v.setPadding(
                 bars.left + dp(8),
-                bars.top + dp(4),
+                bars.top + dp(8),
                 bars.right + dp(8),
                 bars.bottom + dp(8)
             )
             insets
         }
-        dialogo.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
+        dialogo.window?.let { pantallaCompleta(it) }
         dialogo.show()
-        dialogo.window?.setLayout(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
+        dialogo.window?.let {
+            pantallaCompleta(it)
+            it.setLayout(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
     }
 
     private fun apiKey(): String = prefs.getString(KEY_API, "").orEmpty()
@@ -869,6 +1132,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 getString(R.string.button_listen)
             }
+        syncWakeWord()
     }
 
     private fun showError(message: String) {
@@ -906,13 +1170,68 @@ class MainActivity : AppCompatActivity() {
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).roundToInt()
 
+    /** Oculta las barras del sistema; se muestran solo con un deslizamiento. */
+    private fun pantallaCompleta(ventana: Window) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            ventana.attributes = ventana.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        WindowCompat.setDecorFitsSystemWindows(ventana, false)
+        WindowInsetsControllerCompat(ventana, ventana.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(WakeWordSettings.EXTRA_WAKE_WORD, false)) {
+            wakeLaunch = true
+            binding.root.removeCallbacks(wakeWordRunnable)
+            wakeWordEngine?.detener()
+            binding.root.postDelayed({ lanzarDesdeWakeWord() }, 700L)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        enPrimerPlano = true
+        getSystemService(NotificationManager::class.java)
+            ?.cancel(WakeWordService.ALERT_ID)
+        pantallaCompleta(window)
+        if (wakeWordEnabled && wakeWordBackground) {
+            // El servicio se inicia con la app visible; Android 14+ no deja
+            // arrancar un servicio de micrófono desde segundo plano.
+            iniciarServicioWakeWord()
+            accionServicioWakeWord(WakeWordService.ACTION_PAUSE)
+        } else {
+            pararServicioWakeWord()
+        }
+        syncWakeWord(inmediato = true)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && settingsDialog?.isShowing != true) {
+            pantallaCompleta(window)
+        }
+    }
+
     override fun onPause() {
         super.onPause()
-        greetingJob?.cancel()
-        greetingJob = null
+        enPrimerPlano = false
         binding.root.removeCallbacks(autoListenRunnable)
+        binding.root.removeCallbacks(wakeWordRunnable)
+        wakeWordEngine?.detener()
         autoTurn = false
         tts?.stop()
+        if (binding.orb.state == OrbView.State.SPEAKING) {
+            updateUi(estadoReposo())
+        }
         previewTts?.stop()
         if (listening) {
             stopping = true
@@ -920,10 +1239,25 @@ class MainActivity : AppCompatActivity() {
             speech?.cancel()
             updateUi(estadoReposo())
         }
+        if (wakeWordEnabled && wakeWordBackground) {
+            accionServicioWakeWord(WakeWordService.ACTION_RESUME)
+            // Si el servicio aún se estaba creando, reintenta el aviso.
+            binding.root.postDelayed({
+                if (!enPrimerPlano && wakeWordEnabled && wakeWordBackground) {
+                    accionServicioWakeWord(WakeWordService.ACTION_RESUME)
+                }
+            }, 900L)
+        } else {
+            pararServicioWakeWord()
+        }
     }
 
     override fun onDestroy() {
         binding.root.removeCallbacks(autoListenRunnable)
+        binding.root.removeCallbacks(wakeWordRunnable)
+        wakeWordEngine?.detener()
+        wakeWordEngine = null
+        if (!(wakeWordEnabled && wakeWordBackground)) pararServicioWakeWord()
         tts?.stop()
         tts?.shutdown()
         tts = null
@@ -943,5 +1277,14 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_AUTO_LISTEN = "auto_listen"
         private const val KEY_TTS_VOICE = "tts_voice"
         private const val KEY_LANGUAGE = "language_mode"
+
+        /** Margen después del TTS para que no se cuele la cola de la voz. */
+        private const val AUTO_LISTEN_DELAY_MS = 200L
+
+        /** Espera antes de reabrir Vosk; cubre el eco del TTS y el micrófono. */
+        private const val WAKE_WORD_DELAY_MS = 1400L
+
+        /** Al abrir la app no hay TTS: Vosk puede arrancar casi de inmediato. */
+        private const val WAKE_WORD_STARTUP_DELAY_MS = 300L
     }
 }

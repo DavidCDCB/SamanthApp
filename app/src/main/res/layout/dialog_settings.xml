@@ -134,6 +134,83 @@
                 android:textColor="@color/text_muted"
                 android:textSize="12sp" />
 
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/wakeWordSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="@string/settings_wake_word"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/wakeWordHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_wake_word_hint"
+                android:textColor="@color/text_muted"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:id="@+id/wakeWordOptions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_wake_mode"
+                    android:textColor="@color/text"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/wakeModeGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    app:selectionRequired="true"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/wakeModeForeground"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/settings_wake_foreground" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/wakeModeBackground"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/settings_wake_background" />
+
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                <TextView
+                    android:id="@+id/wakeModeHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_wake_mode_hint"
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/wakeModelStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/settings_wake_model_missing"
+                    android:textColor="@color/cyan"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/voiceButton"
                 style="@style/Widget.Material3.Button.TextButton"
