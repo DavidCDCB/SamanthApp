@@ -37,6 +37,11 @@ completo **voz → modelo → voz**.
 - **Mantener pantalla encendida**: activado por defecto; evita que la pantalla
   se apague sola mientras la app está en primer plano. Ideal para dejar el
   teléfono dedicado en el escritorio. Se puede desactivar en Ajustes.
+- **Horizontal**: al girar el teléfono, el orbe queda **centrado** si no hay
+  tarjetas; cuando aparece una transcripción o respuesta, pasa a la mitad
+  izquierda y las tarjetas a la derecha. Mantiene un margen superior para que
+  su expansión no quede debajo de la barra de estado. La actividad no se
+  recrea, así que la escucha y la voz no se cortan durante el giro.
 - **Ajustes** está en el menú de **tres puntos**, arriba a la derecha, y ahora
   ocupa **pantalla completa**.
 - En Ajustes puedes elegir **Español o English**: cambia el idioma del
@@ -217,7 +222,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat :app:assembleRelease
 ```
 
-Salida: `dist\Samantha-2.5.4-android16.apk` (también en
+Salida: `dist\Samantha-2.6.0-android16.apk` (también en
 `app\build\outputs\apk\release\app-release.apk`).
 
 - `minSdk 26` → Android 8.0 en adelante, incluido **Android 16** (API 36).
@@ -264,6 +269,9 @@ HyperOS bloquea `adb install` por defecto aunque la depuración USB esté activa
 El orbe es la única señal de estado: no hay etiquetas de texto. **Azul** significa
 que ya hay API key y modelo configurados; **gris**, que falta configurar. Los
 mensajes de error aparecen en la tarjeta de respuesta, en rojo.
+
+Si el reconocedor no oye voz (silencio o no coincide), el rojo dura unos
+**3,5 s** y luego vuelve solo al azul; el aviso se retira.
 
 El orbe también reacciona al nivel del micrófono mientras escuchas.
 

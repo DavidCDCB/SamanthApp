@@ -165,12 +165,17 @@ class OrbView @JvmOverloads constructor(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val ancho = MeasureSpec.getSize(widthMeasureSpec)
-        val modo = MeasureSpec.getMode(widthMeasureSpec)
+        val alto = MeasureSpec.getSize(heightMeasureSpec)
+        val modoAncho = MeasureSpec.getMode(widthMeasureSpec)
+        val modoAlto = MeasureSpec.getMode(heightMeasureSpec)
         val maximo = dp(420)
-        val lado = when (modo) {
-            MeasureSpec.UNSPECIFIED -> dp(340)
-            else -> min(ancho, maximo)
-        }
+        val lado = when {
+            modoAncho == MeasureSpec.UNSPECIFIED && modoAlto == MeasureSpec.UNSPECIFIED ->
+                dp(340)
+            modoAncho == MeasureSpec.UNSPECIFIED -> min(alto, maximo)
+            modoAlto == MeasureSpec.UNSPECIFIED -> min(ancho, maximo)
+            else -> min(min(ancho, alto), maximo)
+        }.coerceAtLeast(dp(120))
         setMeasuredDimension(lado, lado)
     }
 

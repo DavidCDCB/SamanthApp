@@ -10,8 +10,8 @@ android {
         applicationId = "com.cdcb.samanthapp"
         minSdk = 26
         targetSdk = 37
-        versionCode = 39
-        versionName = "2.5.4-SamanthApp"
+        versionCode = 45
+        versionName = "2.6.0-SamanthApp"
 
         // Vosk trae librerías nativas; el teléfono es arm64 y el APK se
         // mantiene razonable para sideload.

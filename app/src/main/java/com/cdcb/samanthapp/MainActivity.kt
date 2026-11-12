@@ -3,6 +3,7 @@ package com.cdcb.samanthapp
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.app.Dialog
 import android.app.NotificationManager
 import android.net.Uri
@@ -16,6 +17,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.util.Log
+import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
@@ -24,6 +26,7 @@ import android.view.WindowManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -75,6 +78,7 @@ class MainActivity : AppCompatActivity() {
     private var autoTurn = false
     private var autoListenTtsRetries = 0
     private var ultimaUtterance = ""
+    private var errorResetRunnable: Runnable? = null
     private var settingsDialog: Dialog? = null
     private var previewTts: TextToSpeech? = null
     private var languageMode = "es"
@@ -124,6 +128,7 @@ class MainActivity : AppCompatActivity() {
         pantallaCompleta(window)
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
         applyInsets()
+        aplicarOrientacion(resources.configuration.orientation)
 
         appConfig = SamanthaConfig.load(this)
         memory = MemoryStore(this, appConfig.historyLimit)
@@ -638,6 +643,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun startListening(automatic: Boolean = false) {
         binding.root.removeCallbacks(autoListenRunnable)
+        cancelarReposoTrasError()
         autoTurn = automatic
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             showError(getString(R.string.recognition_unavailable))
@@ -656,6 +662,7 @@ class MainActivity : AppCompatActivity() {
         listening = true
         binding.responseScroll.visibility = View.GONE
         binding.transcript.visibility = View.GONE
+        rebalancearColumnas()
         updateUi(OrbView.State.LISTENING)
         speech?.startListening(recognizerIntent())
     }
@@ -717,7 +724,10 @@ class MainActivity : AppCompatActivity() {
                 Log.i("Samantha", "auto-listen: sin voz, vuelvo a esperar")
                 updateUi(estadoReposo())
             } else {
+                val sinVoz = error == SpeechRecognizer.ERROR_NO_MATCH ||
+                    error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                 showError(errorMessage(error))
+                if (sinVoz) programarReposoTrasError()
             }
         }
 
@@ -740,6 +750,7 @@ class MainActivity : AppCompatActivity() {
 
             binding.transcript.text = texto
             binding.transcript.visibility = View.VISIBLE
+            rebalancearColumnas()
             updateUi(OrbView.State.THINKING)
             handleMemoryOrModel(texto)
         }
@@ -753,6 +764,7 @@ class MainActivity : AppCompatActivity() {
             if (texto.isNotEmpty()) {
                 binding.transcript.text = texto
                 binding.transcript.visibility = View.VISIBLE
+                rebalancearColumnas()
             }
         }
 
@@ -1271,6 +1283,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showError(message: String) {
+        cancelarReposoTrasError()
         binding.orb.setLevel(0f)
         binding.backdrop.setLevel(0f)
         updateUi(OrbView.State.ERROR)
@@ -1278,12 +1291,40 @@ class MainActivity : AppCompatActivity() {
         mostrarRespuesta(message, R.color.red)
     }
 
+    /**
+     * Cuando no se oye voz, el rojo no debe quedarse fijo: tras unos segundos
+     * vuelve al reposo (azul) y se retira el aviso.
+     */
+    private fun programarReposoTrasError() {
+        cancelarReposoTrasError()
+        val runnable = Runnable {
+            errorResetRunnable = null
+            if (binding.orb.state != OrbView.State.ERROR) return@Runnable
+            Log.i("Samantha", "sin voz: vuelvo a reposo")
+            binding.orb.setLevel(0f)
+            binding.backdrop.setLevel(0f)
+            binding.responseScroll.visibility = View.GONE
+            binding.transcript.visibility = View.GONE
+            updateUi(estadoReposo())
+            rebalancearColumnas()
+        }
+        errorResetRunnable = runnable
+        binding.root.postDelayed(runnable, ERROR_NO_SPEECH_RESET_MS)
+    }
+
+    private fun cancelarReposoTrasError() {
+        errorResetRunnable?.let { binding.root.removeCallbacks(it) }
+        errorResetRunnable = null
+    }
+
     /** Pinta la tarjeta de respuesta y devuelve el scroll al inicio. */
     private fun mostrarRespuesta(texto: String, colorRes: Int) {
+        cancelarReposoTrasError()
         binding.response.text = texto
         binding.response.setTextColor(ContextCompat.getColor(this, colorRes))
         binding.responseScroll.visibility = View.VISIBLE
         binding.responseScroll.scrollTo(0, 0)
+        rebalancearColumnas()
     }
 
 
@@ -1306,6 +1347,9 @@ class MainActivity : AppCompatActivity() {
             parametros.topMargin = bars.top + dp(2)
             parametros.marginEnd = bars.right + dp(6)
             binding.settingsButton.layoutParams = parametros
+            // Si aparecen o desaparecen las barras, el orbe se recentra en el
+            // área visible para no quedar debajo de la barra de estado.
+            binding.root.post { sincronizarFocoFondo() }
             insets
         }
     }
@@ -1371,6 +1415,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun sincronizarFocoFondo() {
+        centrarOrbeVertical()
         val orb = binding.orb
         val fondo = binding.backdrop
         if (orb.width == 0 || orb.height == 0) return
@@ -1382,6 +1427,130 @@ class MainActivity : AppCompatActivity() {
             posOrbe[0] - posFondo[0] + orb.width / 2f,
             posOrbe[1] - posFondo[1] + orb.height / 2f,
         )
+    }
+
+    /**
+     * En horizontal, el contenido queda un poco por debajo del centro por los
+     * insets de la pantalla. Se compensa con una traslación para que el orbe
+     * quede centrado verticalmente dentro del área visible, no debajo de la
+     * barra de estado.
+     */
+    private fun centrarOrbeVertical() {
+        val orbe = binding.orbHolder
+        if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
+            orbe.translationY = 0f
+            return
+        }
+        if (binding.root.height == 0 || orbe.height == 0) return
+        // Se mide sin la traslación anterior para no acumular el desplazamiento.
+        orbe.translationY = 0f
+        val posOrbe = IntArray(2)
+        val posRaiz = IntArray(2)
+        orbe.getLocationInWindow(posOrbe)
+        binding.root.getLocationInWindow(posRaiz)
+        val arriba = binding.contentScroll.paddingTop
+        val abajo = binding.contentScroll.paddingBottom
+        val altoVisible = (binding.root.height - arriba - abajo).coerceAtLeast(1)
+        val centroVisible = posRaiz[1] + arriba + altoVisible / 2f
+        val centroOrbe = posOrbe[1] + orbe.height / 2f
+        orbe.translationY = centroVisible - centroOrbe
+    }
+
+    /**
+     * Ajusta la composición al girar: en vertical el orbe va arriba y las
+     * tarjetas debajo; en horizontal, orbe a la izquierda y tarjetas a la
+     * derecha. La actividad no se recrea (`configChanges`), así que el
+     * micrófono y el TTS siguen vivos durante el giro.
+     */
+    private fun aplicarOrientacion(orientacion: Int) {
+        val horizontal = orientacion == Configuration.ORIENTATION_LANDSCAPE
+        binding.contentColumn.orientation =
+            if (horizontal) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        binding.contentColumn.gravity = if (horizontal) {
+            Gravity.CENTER_VERTICAL
+        } else {
+            Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
+        }
+
+        val lpOrbe = binding.orbHolder.layoutParams as LinearLayout.LayoutParams
+        val lpTarjetas = binding.cardsColumn.layoutParams as LinearLayout.LayoutParams
+        if (horizontal) {
+            lpOrbe.width = 0
+            lpOrbe.height = LinearLayout.LayoutParams.MATCH_PARENT
+            lpOrbe.weight = 1f
+            binding.orbHolder.setPadding(0, dp(32), 0, dp(32))
+            lpTarjetas.width = 0
+            lpTarjetas.height = LinearLayout.LayoutParams.MATCH_PARENT
+            lpTarjetas.weight = 1f
+            binding.cardsColumn.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        } else {
+            lpOrbe.width = LinearLayout.LayoutParams.MATCH_PARENT
+            lpOrbe.height = LinearLayout.LayoutParams.WRAP_CONTENT
+            lpOrbe.weight = 0f
+            binding.orbHolder.setPadding(0, 0, 0, 0)
+            lpTarjetas.width = LinearLayout.LayoutParams.MATCH_PARENT
+            lpTarjetas.height = LinearLayout.LayoutParams.WRAP_CONTENT
+            lpTarjetas.weight = 0f
+            binding.cardsColumn.gravity = Gravity.CENTER_VERTICAL
+        }
+        binding.orbHolder.layoutParams = lpOrbe
+        binding.cardsColumn.layoutParams = lpTarjetas
+
+        val lpRespuesta =
+            binding.responseScroll.layoutParams as LinearLayout.LayoutParams
+        if (horizontal) {
+            lpRespuesta.height = 0
+            lpRespuesta.weight = 1f
+        } else {
+            lpRespuesta.height = LinearLayout.LayoutParams.WRAP_CONTENT
+            lpRespuesta.weight = 0f
+        }
+        binding.responseScroll.layoutParams = lpRespuesta
+
+        Log.i(
+            "Samantha",
+            "orientación: ${if (horizontal) "horizontal" else "vertical"}"
+        )
+        rebalancearColumnas()
+        binding.root.post { sincronizarFocoFondo() }
+    }
+
+    /**
+     * En horizontal, si no hay tarjetas visibles el orbe ocupa toda la
+     * pantalla; cuando aparece una transcripción o respuesta, se reparte el
+     * ancho entre orbe y tarjetas.
+     */
+    private fun rebalancearColumnas() {
+        if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
+            return
+        }
+        val hayTarjetas = hayCuadrosDeTexto()
+        val lpOrbe = binding.orbHolder.layoutParams as LinearLayout.LayoutParams
+        val lpTarjetas = binding.cardsColumn.layoutParams as LinearLayout.LayoutParams
+        lpOrbe.width = 0
+        lpOrbe.height = LinearLayout.LayoutParams.MATCH_PARENT
+        lpOrbe.weight = 1f
+        lpTarjetas.width = 0
+        lpTarjetas.height = LinearLayout.LayoutParams.MATCH_PARENT
+        lpTarjetas.weight = if (hayTarjetas) 1f else 0f
+        binding.orbHolder.layoutParams = lpOrbe
+        binding.cardsColumn.layoutParams = lpTarjetas
+        binding.root.post { sincronizarFocoFondo() }
+    }
+
+    /** Solo cuentan las tarjetas que de verdad muestran texto. */
+    private fun hayCuadrosDeTexto(): Boolean =
+        (binding.transcript.visibility == View.VISIBLE &&
+            binding.transcript.text.isNotBlank()) ||
+            (binding.responseScroll.visibility == View.VISIBLE &&
+                binding.response.text.isNotBlank())
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        aplicarOrientacion(newConfig.orientation)
+        pantallaCompleta(window)
+        binding.root.requestApplyInsets()
+        binding.root.post { sincronizarFocoFondo() }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -1428,6 +1597,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         binding.root.removeCallbacks(autoListenRunnable)
         binding.root.removeCallbacks(wakeWordRunnable)
+        cancelarReposoTrasError()
         wakeWordEngine?.detener()
         wakeWordEngine = null
         if (!(wakeWordEnabled && wakeWordBackground)) pararServicioWakeWord()
@@ -1455,6 +1625,9 @@ class MainActivity : AppCompatActivity() {
 
         /** Margen después del TTS para que no se cuele la cola de la voz. */
         private const val AUTO_LISTEN_DELAY_MS = 200L
+
+        /** Tiempo que el orbe permanece rojo cuando no se oye voz. */
+        private const val ERROR_NO_SPEECH_RESET_MS = 3500L
 
         /** Margen extra cuando la voz es de red y el audio llega tras onDone. */
         private const val AUTO_LISTEN_NETWORK_GUARD_MS = 400L
