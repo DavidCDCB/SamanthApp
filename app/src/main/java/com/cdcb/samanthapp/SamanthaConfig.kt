@@ -10,6 +10,12 @@ data class SamanthaConfigData(
     val reasoningEffort: String = "high",
     val maxTokens: Int = 800,
     val temperature: Double = 0.6,
+    val firecrawlApiKey: String = "",
+    val firecrawlMaxResults: Int = 5,
+    val firecrawlLang: String = "es",
+    val firecrawlCountry: String = "CO",
+    val firecrawlTimeoutMs: Int = 15_000,
+    val historyLimit: Int = 8,
 )
 
 /**
@@ -33,7 +39,8 @@ object SamanthaConfig {
             TAG,
             "config=${archivo.absolutePath} model=${config.model} " +
                 "reasoning=${config.reasoningEffort} max_tokens=${config.maxTokens} " +
-                "temperature=${config.temperature}"
+                "temperature=${config.temperature} history=${config.historyLimit} " +
+                "firecrawl=${if (config.firecrawlApiKey.isNotBlank()) "sí (${config.firecrawlApiKey.length} chars)" else "no"}"
         )
         return config
     }
@@ -52,13 +59,19 @@ object SamanthaConfig {
         return destino
     }
 
-    /** Parser del subconjunto de YAML que usa la app (`ai:` + claves simples). */
+    /** Parser del subconjunto de YAML que usa la app (`ai:` + `firecrawl:`). */
     fun parse(texto: String): SamanthaConfigData {
         var baseUrl = DEFAULT_BASE_URL
         var model = DEFAULT_MODEL
         var effort = "high"
         var maxTokens = 800
         var temperature = 0.6
+        var firecrawlKey = ""
+        var firecrawlMax = 5
+        var firecrawlLang = "es"
+        var firecrawlCountry = "CO"
+        var firecrawlTimeout = 15
+        var historyLimit = 8
         var seccion = ""
 
         for (lineaCruda in texto.lineSequence()) {
@@ -68,24 +81,54 @@ object SamanthaConfig {
                 seccion = linea.dropLast(1).trim().lowercase()
                 continue
             }
-            if (seccion.isNotEmpty() && seccion != "ai") continue
+            if (seccion != "ai" && seccion != "firecrawl" && seccion != "memory") continue
             val corte = linea.indexOf(':')
             if (corte <= 0) continue
             val clave = linea.substring(0, corte).trim().lowercase()
             val valor = linea.substring(corte + 1).trim().trim('"', '\'')
-            when (clave) {
-                "base_url" -> baseUrl = valor.ifBlank { baseUrl }
-                "model" -> model = valor.ifBlank { model }
-                "reasoning_effort" -> effort = valor.lowercase()
-                "max_tokens" -> valor.toIntOrNull()
-                    ?.takeIf { it in 1..8000 }
-                    ?.let { maxTokens = it }
-                "temperature" -> valor.replace(',', '.').toDoubleOrNull()
-                    ?.coerceIn(0.0, 2.0)
-                    ?.let { temperature = it }
+            when (seccion) {
+                "ai" -> when (clave) {
+                    "base_url" -> baseUrl = valor.ifBlank { baseUrl }
+                    "model" -> model = valor.ifBlank { model }
+                    "reasoning_effort" -> effort = valor.lowercase()
+                    "max_tokens" -> valor.toIntOrNull()
+                        ?.takeIf { it in 1..8000 }
+                        ?.let { maxTokens = it }
+                    "temperature" -> valor.replace(',', '.').toDoubleOrNull()
+                        ?.coerceIn(0.0, 2.0)
+                        ?.let { temperature = it }
+                }
+                "firecrawl" -> when (clave) {
+                    "api_key" -> firecrawlKey = valor
+                    "max_results" -> valor.toIntOrNull()
+                        ?.takeIf { it in 1..10 }
+                        ?.let { firecrawlMax = it }
+                    "lang" -> if (valor.isNotBlank()) firecrawlLang = valor
+                    "country" -> if (valor.isNotBlank()) firecrawlCountry = valor
+                    "timeout" -> valor.toIntOrNull()
+                        ?.takeIf { it in 5..60 }
+                        ?.let { firecrawlTimeout = it }
+                }
+                "memory" -> when (clave) {
+                    "recent_window", "history_limit" -> valor.toIntOrNull()
+                        ?.takeIf { it in 2..200 }
+                        ?.let { historyLimit = it }
+                }
             }
         }
 
-        return SamanthaConfigData(baseUrl, model, effort, maxTokens, temperature)
+        return SamanthaConfigData(
+            baseUrl,
+            model,
+            effort,
+            maxTokens,
+            temperature,
+            firecrawlKey,
+            firecrawlMax,
+            firecrawlLang,
+            firecrawlCountry,
+            firecrawlTimeout * 1000,
+            historyLimit,
+        )
     }
 }

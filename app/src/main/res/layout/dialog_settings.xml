@@ -134,6 +134,86 @@
                 android:textColor="@color/text_muted"
                 android:textSize="12sp" />
 
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="@string/settings_background"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/backgroundGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/backgroundOn"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:paddingLeft="2dp"
+                    android:paddingRight="2dp"
+                    android:textSize="13sp"
+                    android:text="@string/settings_background_on" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/backgroundLow"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:paddingLeft="2dp"
+                    android:paddingRight="2dp"
+                    android:textSize="13sp"
+                    android:text="@string/settings_background_low" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/backgroundOff"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:paddingLeft="2dp"
+                    android:paddingRight="2dp"
+                    android:textSize="13sp"
+                    android:text="@string/settings_background_off" />
+
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_background_hint"
+                android:textColor="@color/text_muted"
+                android:textSize="12sp" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/keepScreenSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/settings_keep_screen"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_keep_screen_hint"
+                android:textColor="@color/text_muted"
+                android:textSize="12sp" />
+
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/wakeWordSwitch"
                 android:layout_width="match_parent"

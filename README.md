@@ -26,6 +26,17 @@ completo **voz → modelo → voz**.
 - La respuesta aparece en una tarjeta con **scroll vertical propio**: si es
   larga, se desplaza dentro de la tarjeta (hasta 240 dp de alto) sin cortar el
   texto, y el orbe no se mueve.
+- **Fondo animado a pantalla completa**: aurora multicapa, cortinas que flotan,
+  polvo con parpadeo, luciérnagas y anillos lentos que nacen del centro real
+  del orbe; en reposo aparece de vez en cuando una estrella fugaz. El color
+  cambia con la hora local: **mañana** (verde agua y dorado), **mediodía**
+  (azul y cian), **tarde** (naranja y rosa) y **noche** (índigo y violeta).
+  Los estados activos conservan su color funcional. En Ajustes puedes elegir
+  **Normal**, **Bajo** (menos FPS, manchas y partículas) o **Apagado**; se
+  pausa solo cuando la app deja de estar visible.
+- **Mantener pantalla encendida**: activado por defecto; evita que la pantalla
+  se apague sola mientras la app está en primer plano. Ideal para dejar el
+  teléfono dedicado en el escritorio. Se puede desactivar en Ajustes.
 - **Ajustes** está en el menú de **tres puntos**, arriba a la derecha, y ahora
   ocupa **pantalla completa**.
 - En Ajustes puedes elegir **Español o English**: cambia el idioma del
@@ -33,8 +44,11 @@ completo **voz → modelo → voz**.
   idioma en que le hablas** (inglés si le hablas en inglés, español si en
   español); el modo elegido es el fallback si el mensaje es ambiguo.
 - En Ajustes puedes activar **Escuchar al terminar de hablar**: al acabar cada
-  respuesta, hay un margen de **200 ms** y luego se abre **una sola ventana de
-  escucha** (unos 5 s). Si no hablas, vuelve a esperar sin abrir otra ventana.
+  respuesta hay un margen de **200 ms**; si el motor TTS todavía está sonando
+  (algunos móviles llaman `onDone` antes), se espera a que termine de verdad.
+  Para voces de red se añaden **400 ms** extra. Después se abre **una sola
+  ventana de escucha** (unos 5 s). Si no hablas, vuelve a esperar sin abrir
+  otra ventana.
 
 ## «Hola Samantha» con Vosk
 
@@ -85,7 +99,11 @@ Samantha recuerda entre sesiones (SharedPreferences privadas, sin backup):
   "mi nombre es Juan"…). También se actualiza si lo dices en otro momento.
 - **Recuerdos**: di "recuerda que …" para guardar un dato y "olvida …" /
   "olvídate de …" para borrarlo. Se incluyen en el prompt de cada turno.
-- **Historial**: se guardan los últimos 8 turnos y se recuperan al abrir.
+- **Historial**: se guardan los últimos mensajes (por defecto 8 = 4
+  intercambios) en `samantha_memory`; **persisten al cerrar la app** y se
+  recuperan al abrir. La cantidad se ajusta con `memory.recent_window` en
+  `config.yaml` (2–200 mensajes; cada intercambio son 2). Los más viejos se
+  descartan al superar el límite.
 - **Ajustes** muestra cuántos recuerdos hay y permite **borrar memoria**
   (recuerdos, historial y nombre; la próxima conversación vuelve a preguntarlo).
 
@@ -109,9 +127,9 @@ infinito) y se incluye como adaptive icon + mipmaps por densidad.
 
 El prompt vive en `app/src/main/assets/persona_samantha.md` y está basado en
 `personas/samantha/system_prompt.md` del proyecto de PC: misma esencia, voz,
-carácter, reglas de voz y cuidado. Se quitaron las secciones de `web_search`,
-`wikipedia` y `open_search`, porque Android todavía no tiene esas herramientas
-y el prompt no debe prometer lo que no puede hacer.
+carácter, reglas de voz y cuidado. La búsqueda web se añadió con Firecrawl; el
+bloque de búsqueda solo se agrega al prompt cuando hay una API key configurada.
+Las secciones de `open_search` y `wikipedia` siguen fuera.
 
 En cada petición `SamanthaApi.composeSystemPrompt(...)` añade al final:
 
@@ -131,6 +149,11 @@ En el primer arranque se copia `assets/config.yaml` a:
 Android/data/com.cdcb.samanthapp/files/config.yaml
 ```
 
+**Importante:** si ese archivo ya existe, la app **no lo sobrescribe** al
+recompilar o actualizar el APK. El archivo del teléfono manda. Para cambiar un
+valor en una instalación existente, edita el archivo del teléfono y reinicia;
+cambiar solo el `assets` y recompilar no actualiza la copia que ya está en uso.
+
 ```yaml
 ai:
   base_url: "https://opencode.ai/inference/go/openai/v1"
@@ -138,6 +161,16 @@ ai:
   reasoning_effort: "high"
   max_tokens: 800
   temperature: 0.6
+
+memory:
+  recent_window: 8   # mensajes (2 = 1 intercambio); 2–200
+
+firecrawl:
+  api_key: ""          # pega aquí la key fc-...
+  max_results: 5
+  timeout: 15
+  lang: "es"
+  country: "CO"
 ```
 
 - `reasoning_effort`: `low | medium | high | xhigh | max` según el modelo.
@@ -145,16 +178,37 @@ ai:
 - `max_tokens` y `temperature` también se leen de ahí.
 - El `model` de **Ajustes** (si lo guardas) manda sobre el del archivo; el resto
   de parámetros sale siempre del YAML.
+- **`memory.recent_window`**: cantidad de mensajes recientes que se conservan
+  en `samantha_memory` y se envían al modelo. Por defecto **8** (4
+  intercambios). Rango 2–200. Al bajarlo, el historial guardado se recorta.
+- **`firecrawl.api_key`**: la API key de Firecrawl va **solo en este archivo**,
+  no en la pantalla de Ajustes. Si está vacía, el modelo no recibe la
+  herramienta `web_search`. La app nunca imprime la key; en logcat solo se ve
+  `firecrawl=sí (N chars)` o `firecrawl=no`.
 - Se lee al arrancar: edita el archivo y **reinicia la app**. En Android 11+ los
   gestores de archivos no ven `Android/data`; usa USB/adb:
 
 ```powershell
 adb pull /sdcard/Android/data/com.cdcb.samanthapp/files/config.yaml
-# editar reasoning_effort: "high"
+# editar reasoning_effort y firecrawl.api_key
 adb push config.yaml /sdcard/Android/data/com.cdcb.samanthapp/files/config.yaml
 ```
 
 El valor activo queda en logcat con la etiqueta `SamanthaConfig`.
+
+## Búsqueda web (Firecrawl)
+
+- El modelo recibe una herramienta `web_search` cuando `firecrawl.api_key` no
+  está vacía. La usa para noticias, precios, eventos o datos recientes; no para
+  definiciones que ya sabe.
+- Firecrawl devuelve título, resumen y URL; la app no descarga la página
+  completa, así que no gasta créditos de scraping.
+- Límite de voz: como máximo **2 búsquedas por turno**; después el modelo
+  responde sin herramientas.
+- Si Firecrawl rechaza la key (401), se queda sin créditos (402) o falla la
+  red, el modelo recibe el error y debe decirlo; no inventa resultados.
+- No hay respaldo a DuckDuckGo en Android todavía; la búsqueda web requiere una
+  key válida de Firecrawl en `config.yaml`.
 
 ## APK release
 
@@ -163,7 +217,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat :app:assembleRelease
 ```
 
-Salida: `dist\Samantha-2.3.5-android16.apk` (también en
+Salida: `dist\Samantha-2.5.4-android16.apk` (también en
 `app\build\outputs\apk\release\app-release.apk`).
 
 - `minSdk 26` → Android 8.0 en adelante, incluido **Android 16** (API 36).

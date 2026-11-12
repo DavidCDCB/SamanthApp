@@ -6,9 +6,19 @@
     android:layout_height="match_parent"
     android:background="@drawable/bg_screen">
 
-    <androidx.core.widget.NestedScrollView
+    <com.cdcb.samanthapp.BackdropView
+        android:id="@+id/backdrop"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no" />
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/contentScroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="true"
         android:fillViewport="true">
 
         <LinearLayout

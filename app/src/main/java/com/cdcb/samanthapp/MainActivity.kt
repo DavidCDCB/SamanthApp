@@ -22,6 +22,7 @@ import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
@@ -72,6 +73,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var appConfig: SamanthaConfigData
     private var autoListen = false
     private var autoTurn = false
+    private var autoListenTtsRetries = 0
+    private var ultimaUtterance = ""
     private var settingsDialog: Dialog? = null
     private var previewTts: TextToSpeech? = null
     private var languageMode = "es"
@@ -81,6 +84,8 @@ class MainActivity : AppCompatActivity() {
     private var wakeWordEngine: WakeWordEngine? = null
     private var wakeLaunch = false
     private var enPrimerPlano = false
+    private var animatedBackground = "on"
+    private var keepScreenOn = true
     private var autoOpenStatusView: TextView? = null
     private var autoOpenButtonView: MaterialButton? = null
     private var wakeModeGroupView: MaterialButtonToggleGroup? = null
@@ -120,9 +125,9 @@ class MainActivity : AppCompatActivity() {
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
         applyInsets()
 
-        memory = MemoryStore(this)
-        history = memory.history()
         appConfig = SamanthaConfig.load(this)
+        memory = MemoryStore(this, appConfig.historyLimit)
+        history = memory.history()
         autoListen = prefs.getBoolean(KEY_AUTO_LISTEN, false)
         languageMode = prefs.getString(KEY_LANGUAGE, "es")
             ?.takeIf { it == "en" } ?: "es"
@@ -145,6 +150,16 @@ class MainActivity : AppCompatActivity() {
 
         binding.orb.setOnClickListener { toggleListening() }
         binding.settingsButton.setOnClickListener { openSettings() }
+        animatedBackground = prefs.getString(KEY_ANIMATED_BG, "on")
+            ?.takeIf { it == "low" || it == "off" } ?: "on"
+        keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, true)
+        binding.backdrop.setMode(animatedBackground)
+        // Halo, anillos y ondas nacen del centro real del orbe, no del centro
+        // de la pantalla: si la tarjeta de respuesta lo empuja, se recalcula.
+        binding.orb.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            sincronizarFocoFondo()
+        }
+        binding.root.post { sincronizarFocoFondo() }
         updateUi(estadoReposo())
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
@@ -214,12 +229,16 @@ class MainActivity : AppCompatActivity() {
                 override fun onStart(utteranceId: String?) = Unit
 
                 override fun onDone(utteranceId: String?) {
-                    runOnUiThread { finishSpeaking() }
+                    if (utteranceId == null || utteranceId == ultimaUtterance) {
+                        runOnUiThread { finishSpeaking() }
+                    }
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    runOnUiThread { finishSpeaking() }
+                    if (utteranceId == null || utteranceId == ultimaUtterance) {
+                        runOnUiThread { finishSpeaking() }
+                    }
                 }
             })
             pendingSpeech?.let { pendiente ->
@@ -375,7 +394,8 @@ class MainActivity : AppCompatActivity() {
         initTts()
     }
 
-    private fun speak(texto: String) {        val motor = tts
+    private fun speak(texto: String) {
+        val motor = tts
         if (!ttsReady || motor == null) {
             // El TTS puede tardar en inicializar; se dice en cuanto esté listo.
             pendingSpeech = texto
@@ -383,7 +403,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
         updateUi(OrbView.State.SPEAKING)
-        motor.speak(texto, TextToSpeech.QUEUE_FLUSH, null, "samantha-${System.currentTimeMillis()}")
+        val id = "samantha-${System.currentTimeMillis()}"
+        ultimaUtterance = id
+        motor.speak(texto, TextToSpeech.QUEUE_FLUSH, null, id)
     }
 
     private fun finishSpeaking() {
@@ -398,13 +420,33 @@ class MainActivity : AppCompatActivity() {
 
     private fun scheduleAutoListen() {
         if (!autoListen) return
+        autoListenTtsRetries = 0
         binding.root.removeCallbacks(autoListenRunnable)
-        // 200 ms de margen para que no se cuele la cola del TTS.
-        binding.root.postDelayed(autoListenRunnable, AUTO_LISTEN_DELAY_MS)
+        // 200 ms de margen para que no se cuele la cola del TTS. Si la voz
+        // es de red, el audio puede llegar después del onDone: se añade
+        // margen extra para no oír la propia respuesta en el micrófono.
+        val extraRed = if (tts?.voice?.isNetworkConnectionRequired == true) {
+            AUTO_LISTEN_NETWORK_GUARD_MS
+        } else {
+            0L
+        }
+        binding.root.postDelayed(autoListenRunnable, AUTO_LISTEN_DELAY_MS + extraRed)
     }
 
     private fun maybeAutoListen() {
         if (!autoListen || listening || isFinishing) return
+        // Algunos motores TTS llaman onDone antes de terminar el audio.
+        // No se abre el micrófono hasta que el motor deje de hablar.
+        if (tts?.isSpeaking == true) {
+            autoListenTtsRetries++
+            if (autoListenTtsRetries <= AUTO_LISTEN_TTS_MAX_RETRIES) {
+                Log.i("Samantha", "auto-listen: espero a que termine el TTS")
+                binding.root.removeCallbacks(autoListenRunnable)
+                binding.root.postDelayed(autoListenRunnable, AUTO_LISTEN_TTS_RETRY_MS)
+                return
+            }
+        }
+        autoListenTtsRetries = 0
         if (!enReposo(binding.orb.state)) return
         val permiso = ContextCompat.checkSelfPermission(
             this,
@@ -448,6 +490,7 @@ class MainActivity : AppCompatActivity() {
         if (isFinishing || listening || !enPrimerPlano) return
         if (!enReposo(binding.orb.state)) return
         binding.orb.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        binding.backdrop.ripple()
         Log.i("Samantha", "wake word: abro el micrófono")
         startListening(automatic = true)
     }
@@ -530,6 +573,7 @@ class MainActivity : AppCompatActivity() {
         binding.root.removeCallbacks(wakeWordRunnable)
         wakeWordEngine?.detener()
         binding.orb.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        binding.backdrop.ripple()
 
         if (listening) {
             stopping = true
@@ -641,6 +685,7 @@ class MainActivity : AppCompatActivity() {
 
         override fun onRmsChanged(rmsdB: Float) {
             binding.orb.setLevel(((rmsdB + 2f) / 12f).coerceIn(0f, 1f))
+            binding.backdrop.setLevel(((rmsdB + 2f) / 12f).coerceIn(0f, 1f))
             if (rmsdB > 3f && binding.orb.state == OrbView.State.LISTENING) {
                 binding.orb.state = OrbView.State.HEARING
             }
@@ -765,7 +810,9 @@ class MainActivity : AppCompatActivity() {
     private fun finishLocalTurn(texto: String, respuesta: String) {
         history.add(Message("user", texto))
         history.add(Message("assistant", respuesta))
-        if (history.size > 8) history = history.takeLast(8).toMutableList()
+        if (history.size > appConfig.historyLimit) {
+            history = history.takeLast(appConfig.historyLimit).toMutableList()
+        }
         memory.saveHistory(history)
         mostrarRespuesta(respuesta, R.color.cyan)
         speak(respuesta)
@@ -792,6 +839,12 @@ class MainActivity : AppCompatActivity() {
                         appConfig.reasoningEffort,
                         appConfig.maxTokens,
                         appConfig.temperature,
+                        appConfig.firecrawlApiKey,
+                        appConfig.firecrawlMaxResults,
+                        appConfig.firecrawlLang,
+                        appConfig.firecrawlCountry,
+                        appConfig.firecrawlTimeoutMs,
+                        appConfig.historyLimit,
                     ).chat(history, texto, nombre, recuerdos, pedirNombre, languageMode)
                 }
             }
@@ -819,7 +872,9 @@ class MainActivity : AppCompatActivity() {
                 }
                 history.add(Message("user", texto))
                 history.add(Message("assistant", respuesta))
-                if (history.size > 8) history = history.takeLast(8).toMutableList()
+                if (history.size > appConfig.historyLimit) {
+                    history = history.takeLast(appConfig.historyLimit).toMutableList()
+                }
                 memory.saveHistory(history)
                 mostrarRespuesta(respuesta, R.color.cyan)
                 speak(respuesta)
@@ -917,6 +972,8 @@ class MainActivity : AppCompatActivity() {
         val clearButton = vista.findViewById<MaterialButton>(R.id.clearMemoryButton)
         val voiceButton = vista.findViewById<MaterialButton>(R.id.voiceButton)
         val autoSwitch = vista.findViewById<MaterialSwitch>(R.id.autoListenSwitch)
+        val keepScreenSwitch = vista.findViewById<MaterialSwitch>(R.id.keepScreenSwitch)
+        val backgroundGroup = vista.findViewById<MaterialButtonToggleGroup>(R.id.backgroundGroup)
         val languageGroup = vista.findViewById<MaterialButtonToggleGroup>(R.id.languageGroup)
         val closeButton = vista.findViewById<ImageButton>(R.id.closeSettings)
         val wakeSwitch = vista.findViewById<MaterialSwitch>(R.id.wakeWordSwitch)
@@ -937,6 +994,14 @@ class MainActivity : AppCompatActivity() {
         memoryInfo.text = getString(R.string.settings_memory_info, memory.facts().size)
         Log.i("Samantha", "ajustes: ${memory.facts().size} recuerdos")
         autoSwitch.isChecked = autoListen
+        keepScreenSwitch.isChecked = keepScreenOn
+        backgroundGroup.check(
+            when (animatedBackground) {
+                "low" -> R.id.backgroundLow
+                "off" -> R.id.backgroundOff
+                else -> R.id.backgroundOn
+            }
+        )
         languageGroup.check(if (languageMode == "en") R.id.languageEn else R.id.languageEs)
         wakeSwitch.isChecked = wakeWordEnabled
         wakeOptions.visibility = if (wakeWordEnabled) View.VISIBLE else View.GONE
@@ -1019,6 +1084,12 @@ class MainActivity : AppCompatActivity() {
                             appConfig.reasoningEffort,
                             appConfig.maxTokens,
                             appConfig.temperature,
+                            appConfig.firecrawlApiKey,
+                            appConfig.firecrawlMaxResults,
+                            appConfig.firecrawlLang,
+                            appConfig.firecrawlCountry,
+                            appConfig.firecrawlTimeoutMs,
+                            appConfig.historyLimit,
                         ).chat(
                             emptyList(),
                             if (languageMode == "en") "Introduce yourself in one sentence."
@@ -1060,6 +1131,12 @@ class MainActivity : AppCompatActivity() {
             if (!autoListen) {
                 binding.root.removeCallbacks(autoListenRunnable)
             }
+            animatedBackground = when (backgroundGroup.checkedButtonId) {
+                R.id.backgroundLow -> "low"
+                R.id.backgroundOff -> "off"
+                else -> "on"
+            }
+            keepScreenOn = keepScreenSwitch.isChecked
             wakeWordEnabled = nuevoWake
             wakeWordBackground = nuevoBackground
             prefs.edit()
@@ -1067,9 +1144,13 @@ class MainActivity : AppCompatActivity() {
                 .putString(KEY_MODEL, modelo)
                 .putBoolean(KEY_AUTO_LISTEN, autoListen)
                 .putString(KEY_LANGUAGE, nuevoIdioma)
+                .putString(KEY_ANIMATED_BG, animatedBackground)
+                .putBoolean(KEY_KEEP_SCREEN_ON, keepScreenOn)
                 .putBoolean(WakeWordSettings.KEY_ENABLED, wakeWordEnabled)
                 .putBoolean(WakeWordSettings.KEY_BACKGROUND, wakeWordBackground)
                 .apply()
+            binding.backdrop.setMode(animatedBackground)
+            aplicarPantallaEncendida()
             if (cambioIdioma) {
                 languageMode = nuevoIdioma
                 reiniciarTts()
@@ -1185,11 +1266,13 @@ class MainActivity : AppCompatActivity() {
             } else {
                 getString(R.string.button_listen)
             }
+        binding.backdrop.state = state
         syncWakeWord()
     }
 
     private fun showError(message: String) {
         binding.orb.setLevel(0f)
+        binding.backdrop.setLevel(0f)
         updateUi(OrbView.State.ERROR)
         // Sin etiqueta de estado: el error se muestra en la tarjeta.
         mostrarRespuesta(message, R.color.red)
@@ -1205,17 +1288,24 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun applyInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or
                     WindowInsetsCompat.Type.displayCutout()
             )
-            view.setPadding(
+            // El fondo va de borde a borde; el padding se aplica al contenido
+            // para que el orbe y los botones no queden bajo el cutout.
+            binding.contentScroll.setPadding(
                 bars.left + dp(8),
                 bars.top + dp(8),
                 bars.right + dp(8),
                 bars.bottom + dp(16)
             )
+            val parametros =
+                binding.settingsButton.layoutParams as FrameLayout.LayoutParams
+            parametros.topMargin = bars.top + dp(2)
+            parametros.marginEnd = bars.right + dp(6)
+            binding.settingsButton.layoutParams = parametros
             insets
         }
     }
@@ -1253,6 +1343,9 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         enPrimerPlano = true
+        aplicarPantallaEncendida()
+        binding.backdrop.resume()
+        binding.root.post { sincronizarFocoFondo() }
         WakeWordSettings.setAppVisible(this, true)
         getSystemService(NotificationManager::class.java)
             ?.cancel(WakeWordService.ALERT_ID)
@@ -1269,6 +1362,28 @@ class MainActivity : AppCompatActivity() {
         actualizarPermisoAutoOpen()
     }
 
+    private fun aplicarPantallaEncendida() {
+        if (keepScreenOn && enPrimerPlano) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    private fun sincronizarFocoFondo() {
+        val orb = binding.orb
+        val fondo = binding.backdrop
+        if (orb.width == 0 || orb.height == 0) return
+        val posOrbe = IntArray(2)
+        val posFondo = IntArray(2)
+        orb.getLocationInWindow(posOrbe)
+        fondo.getLocationInWindow(posFondo)
+        fondo.setFocus(
+            posOrbe[0] - posFondo[0] + orb.width / 2f,
+            posOrbe[1] - posFondo[1] + orb.height / 2f,
+        )
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && settingsDialog?.isShowing != true) {
@@ -1279,6 +1394,8 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         enPrimerPlano = false
+        aplicarPantallaEncendida()
+        binding.backdrop.pause()
         WakeWordSettings.setAppVisible(this, false)
         binding.root.removeCallbacks(autoListenRunnable)
         binding.root.removeCallbacks(wakeWordRunnable)
@@ -1333,9 +1450,18 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_AUTO_LISTEN = "auto_listen"
         private const val KEY_TTS_VOICE = "tts_voice"
         private const val KEY_LANGUAGE = "language_mode"
+        private const val KEY_ANIMATED_BG = "animated_background"
+        private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
 
         /** Margen después del TTS para que no se cuele la cola de la voz. */
         private const val AUTO_LISTEN_DELAY_MS = 200L
+
+        /** Margen extra cuando la voz es de red y el audio llega tras onDone. */
+        private const val AUTO_LISTEN_NETWORK_GUARD_MS = 400L
+
+        /** Si el TTS sigue sonando, se reintenta antes de abrir el micrófono. */
+        private const val AUTO_LISTEN_TTS_RETRY_MS = 250L
+        private const val AUTO_LISTEN_TTS_MAX_RETRIES = 20
 
         /** Espera antes de reabrir Vosk; cubre el eco del TTS y el micrófono. */
         private const val WAKE_WORD_DELAY_MS = 1400L

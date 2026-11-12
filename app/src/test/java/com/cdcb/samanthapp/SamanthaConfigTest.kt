@@ -47,6 +47,55 @@ class SamanthaConfigTest {
     }
 
     @Test
+    fun `lee la seccion firecrawl`() {
+        val cfg = SamanthaConfig.parse(
+            """
+            firecrawl:
+              api_key: "fc-prueba"
+              max_results: 7
+              timeout: 20
+              lang: "en"
+              country: "US"
+            """.trimIndent()
+        )
+        assertEquals("fc-prueba", cfg.firecrawlApiKey)
+        assertEquals(7, cfg.firecrawlMaxResults)
+        assertEquals(20_000, cfg.firecrawlTimeoutMs)
+        assertEquals("en", cfg.firecrawlLang)
+        assertEquals("US", cfg.firecrawlCountry)
+    }
+
+    @Test
+    fun `firecrawl sin config queda desactivado`() {
+        val cfg = SamanthaConfig.parse("")
+        assertEquals("", cfg.firecrawlApiKey)
+        assertEquals(5, cfg.firecrawlMaxResults)
+        assertEquals(15_000, cfg.firecrawlTimeoutMs)
+    }
+
+    @Test
+    fun `lee la ventana de memoria`() {
+        val cfg = SamanthaConfig.parse(
+            """
+            memory:
+              recent_window: 20
+            """.trimIndent()
+        )
+        assertEquals(20, cfg.historyLimit)
+    }
+
+    @Test
+    fun `ventana de memoria invalida usa 8`() {
+        val cfg = SamanthaConfig.parse(
+            """
+            memory:
+              recent_window: 1
+            """.trimIndent()
+        )
+        assertEquals(8, cfg.historyLimit)
+    }
+
+    @Test
     fun `valores invalidos no rompen la carga`() {
         val cfg = SamanthaConfig.parse(
             """

@@ -13,3 +13,15 @@ ai:
   reasoning_effort: "high"
   max_tokens: 800
   temperature: 0.6
+
+# Búsqueda web con Firecrawl
+firecrawl:
+  api_key: "fc-03fe2debb761405e9d94b0a468d2fc1c"
+  max_results: 5
+  timeout: 15
+  lang: "es"
+  country: "CO"
+
+memory:
+  recent_window: 20
+

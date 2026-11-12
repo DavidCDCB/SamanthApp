@@ -54,7 +54,10 @@ object HistoryRules {
  * Memoria persistente de la app: nombre del usuario, recuerdos y últimos
  * turnos de conversación. Vive en SharedPreferences privadas.
  */
-class MemoryStore(context: Context) {
+class MemoryStore(
+    context: Context,
+    private val maxHistory: Int = DEFAULT_MAX_HISTORY,
+) {
 
     private val prefs = context.getSharedPreferences("samantha_memory", Context.MODE_PRIVATE)
 
@@ -94,12 +97,12 @@ class MemoryStore(context: Context) {
             }.toMutableList()
         } catch (_: Exception) {
             mutableListOf()
-        }
+        }.takeLast(maxHistory).toMutableList()
     }
 
     fun saveHistory(messages: List<Message>) {
         val arr = JSONArray()
-        messages.takeLast(MAX_HISTORY).forEach {
+        messages.takeLast(maxHistory).forEach {
             arr.put(JSONObject().put("role", it.role).put("content", it.content))
         }
         prefs.edit().putString(KEY_HISTORY, arr.toString()).apply()
@@ -131,6 +134,6 @@ class MemoryStore(context: Context) {
         private const val KEY_NAME = "user_name"
         private const val KEY_FACTS = "facts"
         private const val KEY_HISTORY = "history"
-        private const val MAX_HISTORY = 8
+        const val DEFAULT_MAX_HISTORY = 8
     }
 }

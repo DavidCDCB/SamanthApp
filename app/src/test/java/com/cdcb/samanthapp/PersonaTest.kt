@@ -17,8 +17,9 @@ class PersonaTest {
         assertTrue(texto.contains("Cómo cuidas a la persona"))
         assertTrue(texto.contains("## Idioma"))
         assertTrue(texto.contains("mismo idioma"))
+        assertTrue(texto.contains("No repitas disculpas por fechas"))
         assertFalse("no debe tener nombres quemados", texto.contains("Fredy", true))
-        assertFalse("no debe prometer herramientas web", texto.contains("web_search"))
+        assertTrue(texto.contains("web_search"))
         assertFalse(texto.contains("open_search"))
     }
 
@@ -36,6 +37,7 @@ class PersonaTest {
         assertTrue(prompt.contains("vive en Bogotá"))
         assertTrue(prompt.contains("## Fecha y hora actuales"))
         assertTrue(prompt.contains("sábado 8 de noviembre de 2026, 20:05"))
+        assertTrue(prompt.contains("eran correctos cuando se dijeron"))
         assertTrue(prompt.contains("## Recuerdos guardados"))
     }
 

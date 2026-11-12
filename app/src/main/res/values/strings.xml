@@ -38,6 +38,13 @@
     <string name="settings_close">Cerrar</string>
     <string name="settings_auto_listen">Escuchar al terminar de hablar</string>
     <string name="settings_auto_listen_hint">Reabre el micrófono después de cada respuesta y te da más tiempo para hablar.</string>
+    <string name="settings_background">Fondo animado</string>
+    <string name="settings_background_on">Normal</string>
+    <string name="settings_background_low">Bajo</string>
+    <string name="settings_background_off">Apagado</string>
+    <string name="settings_background_hint">Aurora, polvo y ondas; el color cambia con la hora. «Bajo» reduce FPS, manchas y partículas.</string>
+    <string name="settings_keep_screen">Mantener pantalla encendida</string>
+    <string name="settings_keep_screen_hint">Evita que se apague sola mientras la app está en primer plano.</string>
     <string name="settings_wake_word">Escuchar «Hola Samantha»</string>
     <string name="settings_wake_word_hint">Detección local con Vosk. La primera vez descarga un modelo de 39 MB.</string>
     <string name="settings_wake_mode">Modo de escucha</string>
