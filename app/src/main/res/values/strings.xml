@@ -32,19 +32,17 @@
     <string name="settings_title">Ajustes</string>
     <string name="settings_api">API key de OpenCode Go</string>
     <string name="settings_model">Modelo</string>
+    <string name="settings_reasoning">Nivel de razonamiento</string>
+    <string name="settings_reasoning_hint">low = más rápido; max = más razonamiento, más lento y más tokens.</string>
     <string name="settings_language">Idioma de voz y micrófono</string>
     <string name="language_es">Español</string>
     <string name="language_en">English</string>
     <string name="settings_close">Cerrar</string>
     <string name="settings_auto_listen">Escuchar al terminar de hablar</string>
     <string name="settings_auto_listen_hint">Reabre el micrófono después de cada respuesta y te da más tiempo para hablar.</string>
-    <string name="settings_background">Fondo animado</string>
-    <string name="settings_background_on">Normal</string>
-    <string name="settings_background_low">Bajo</string>
-    <string name="settings_background_off">Apagado</string>
-    <string name="settings_background_hint">Aurora, polvo y ondas; el color cambia con la hora. «Bajo» reduce FPS, manchas y partículas.</string>
-    <string name="settings_keep_screen">Mantener pantalla encendida</string>
-    <string name="settings_keep_screen_hint">Evita que se apague sola mientras la app está en primer plano.</string>
+    <string name="settings_tts_rate">Velocidad de la voz</string>
+    <string name="settings_tts_rate_default">1,05×</string>
+    <string name="settings_tts_rate_hint">1,00× es la velocidad normal; 0,50× lenta y 2,00× rápida.</string>
     <string name="settings_wake_word">Escuchar «Hola Samantha»</string>
     <string name="settings_wake_word_hint">Detección local con Vosk. La primera vez descarga un modelo de 39 MB.</string>
     <string name="settings_wake_mode">Modo de escucha</string>

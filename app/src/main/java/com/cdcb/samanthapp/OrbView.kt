@@ -111,6 +111,8 @@ class OrbView @JvmOverloads constructor(
 
     private var level = 0f
     private var smoothLevel = 0f
+    private var driftX = 0f
+    private var driftY = 0f
     private val startNanos = System.nanoTime()
 
     private var colorFrom = estilos.getValue(State.WAITING).color
@@ -186,6 +188,14 @@ class OrbView @JvmOverloads constructor(
         level = value.coerceIn(0f, 1f)
     }
 
+    /** Desplazamiento lento para evitar que un píxel reciba siempre el brillo. */
+    fun setDrift(x: Float, y: Float) {
+        if (driftX == x && driftY == y) return
+        driftX = x
+        driftY = y
+        invalidate()
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         if (!ticker.isStarted) ticker.start()
@@ -247,24 +257,28 @@ class OrbView @JvmOverloads constructor(
         val uBase = mitad / 110f
         val u = uBase * ESCALA
         val rBruto = (mitad - 16f * uBase) * p.radio * ESCALA
-        // El halo y la corona ocupan hasta ~1.25 r: se limita el radio para
+        // El halo y la corona ocupan hasta ~1.28 r: se limita el radio para
         // que quepan en la vista y el orbe nunca se recorte en cuadrado.
-        val rMax = (mitad - 6f * u) / 1.30f
+        val rMax = (mitad - 6f * u) / 1.28f
         val escalaPulsacion = if (pressed) 0.985f else 1f
         val r = min(rBruto, rMax) * escalaPulsacion
         if (r <= 0f) return
 
+        canvas.save()
+        canvas.translate(driftX, driftY)
         val base = p.color
         val acento = p.acento
 
         // Resplandor ambiental: llena la vista con el color del estado.
+        // El radio termina antes del borde de la vista para que el recorte
+        // cuadrado no sea visible sobre el fondo animado.
         softPaint.shader = RadialGradient(
-            cx, cy, mitad * 1.35f,
-            intArrayOf(withAlpha(acento, 18), withAlpha(acento, 5), Color.TRANSPARENT),
+            cx, cy, mitad * 0.98f,
+            intArrayOf(withAlpha(acento, 20), withAlpha(acento, 6), Color.TRANSPARENT),
             floatArrayOf(0f, 0.55f, 1f),
             Shader.TileMode.CLAMP
         )
-        canvas.drawCircle(cx, cy, mitad * 1.35f, softPaint)
+        canvas.drawCircle(cx, cy, mitad * 0.98f, softPaint)
 
         // Sombra suave bajo el orbe: le da profundidad sobre el fondo.
         softPaint.shader = RadialGradient(
@@ -353,6 +367,7 @@ class OrbView @JvmOverloads constructor(
             drawDust(canvas, cx, cy, r, u, p, t)
         }
         drawRipple(canvas, cx, cy, r, u, p)
+        canvas.restore()
     }
 
     // ── parámetros (mismo cálculo que orb.py) ─────────────────────────
@@ -677,9 +692,12 @@ class OrbView @JvmOverloads constructor(
         val elapsed = (System.nanoTime() - rippleStartNanos) / 1_000_000_000f
         if (elapsed > 0.5f) return
         val f = elapsed / 0.5f
+        val radioMax = min(canvas.width, canvas.height) / 2f - 4f * u
+        val rr = min(r * (1f + 0.55f * f), radioMax)
+        if (rr <= 0f) return
         strokePaint.strokeWidth = max(1f, 2f * u * (1f - f) + 1f)
         strokePaint.color = withAlpha(p.acento, ((1f - f).pow(2f) * 110f).toInt())
-        canvas.drawCircle(cx, cy, r * (1f + 0.55f * f), strokePaint)
+        canvas.drawCircle(cx, cy, rr, strokePaint)
     }
 
     // ── utilidades ────────────────────────────────────────────────────
@@ -696,6 +714,6 @@ class OrbView @JvmOverloads constructor(
         const val PUNTOS_SIMBOLO = 180
         // El orbe del Python está pensado para una ventana pequeña; en pantalla
         // completa se ve mejor un 45 % más grande sin cambiar su geometría.
-        const val ESCALA = 1.45f
+        const val ESCALA = 1.75f
     }
 }

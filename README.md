@@ -26,21 +26,36 @@ completo **voz → modelo → voz**.
 - La respuesta aparece en una tarjeta con **scroll vertical propio**: si es
   larga, se desplaza dentro de la tarjeta (hasta 240 dp de alto) sin cortar el
   texto, y el orbe no se mueve.
+- **Texto sincronizado con la voz**: la respuesta aparece palabra por palabra
+  mientras el TTS habla, con la palabra actual resaltada. Si el motor no envía
+  rangos de voz, un temporizador de respaldo hace el mismo efecto.
 - **Fondo animado a pantalla completa**: aurora multicapa, cortinas que flotan,
   polvo con parpadeo, luciérnagas y anillos lentos que nacen del centro real
   del orbe; en reposo aparece de vez en cuando una estrella fugaz. El color
-  cambia con la hora local: **mañana** (verde agua y dorado), **mediodía**
-  (azul y cian), **tarde** (naranja y rosa) y **noche** (índigo y violeta).
-  Los estados activos conservan su color funcional. En Ajustes puedes elegir
-  **Normal**, **Bajo** (menos FPS, manchas y partículas) o **Apagado**; se
-  pausa solo cuando la app deja de estar visible.
-- **Mantener pantalla encendida**: activado por defecto; evita que la pantalla
-  se apague sola mientras la app está en primer plano. Ideal para dejar el
-  teléfono dedicado en el escritorio. Se puede desactivar en Ajustes.
+  cambia con la hora local: **mañana** (amarillo y dorado), **mediodía**
+  (rojo y coral), **tarde** (verde y esmeralda) y **noche** (morado y
+  violeta). Los estados activos conservan su color funcional. Se muestra
+  siempre en modo **normal**; no hay ajuste de fondo en Ajustes y se pausa
+  solo cuando la app deja de estar visible.
+- **Pantalla encendida**: siempre activa mientras la app está en primer plano;
+  no hay interruptor en Ajustes. Ideal para dejar el teléfono dedicado en el
+  escritorio.
+- **Protección OLED**: a los **30 s** sin tocar se ocultan los tres puntos (un
+  cambio de estado del orbe no los vuelve a mostrar); a
+  los **3 min** la pantalla se atenúa al 18 % y, tras **1 h** sin uso, baja al
+  5 %. El orbe se desplaza unos píxeles cada **2 min**. Un toque o «Hola
+  Samantha» restauran el brillo y muestran Ajustes. El indicador de micrófono
+  es del sistema y no se puede ocultar.
+- **Velocidad de la voz**: en Ajustes hay un deslizador de **0,50× a 2,00×**
+  (1,05× por defecto) que ajusta la velocidad del TTS y de la muestra de voz.
+- **Nivel de razonamiento**: en Ajustes hay una lista desplegable con
+  **low, medium, high, xhigh y max**. Se guarda en el teléfono y se usa en cada
+  turno; si el modelo no acepta el nivel, la app reintenta sin `reasoning_effort`.
 - **Horizontal**: al girar el teléfono, el orbe queda **centrado** si no hay
   tarjetas; cuando aparece una transcripción o respuesta, pasa a la mitad
-  izquierda y las tarjetas a la derecha. Mantiene un margen superior para que
-  su expansión no quede debajo de la barra de estado. La actividad no se
+  izquierda y las tarjetas a la derecha. El orbe se ajusta al alto visible y
+  reserva la franja de la barra de estado (aunque esté oculta), así que su
+  corona y sus ondas nunca quedan debajo de ella. La actividad no se
   recrea, así que la escucha y la voz no se cortan durante el giro.
 - **Ajustes** está en el menú de **tres puntos**, arriba a la derecha, y ahora
   ocupa **pantalla completa**.
@@ -87,9 +102,13 @@ completo **voz → modelo → voz**.
 1. Abre la app → **Ajustes** (si no hay API key, se abre solo al arrancar).
 2. Pega la **API key** (en el PC está en `secret\OPENCODE_GO_API_KEY`).
 3. Modelo por defecto: `claude-haiku-5-5` (puedes cambiarlo en Ajustes o en `config.yaml`).
-4. Pulsa **Probar modelo** para validar key y red. Para oír la voz, abre
+4. Elige el **Nivel de razonamiento** (low, medium, high, xhigh o max).
+5. Pulsa **Probar modelo** para validar key y red. Para oír la voz, abre
    **Voz del sistema**: al elegir una voz de la lista suena una frase de muestra.
-5. **Guardar**.
+6. Ajusta **Velocidad de la voz** con el deslizador (0,50×–2,00×) si quieres
+   que hable más lento o más rápido. Se aplica al instante y se guarda al
+   pulsar Guardar; puedes probarlo con **Voz del sistema**.
+7. **Guardar**.
 
 La key se guarda en las preferencias privadas de la app (sin cifrar). No sale
 del teléfono salvo en la petición HTTPS a OpenCode. El backup de Android está
@@ -222,7 +241,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat :app:assembleRelease
 ```
 
-Salida: `dist\Samantha-2.6.0-android16.apk` (también en
+Salida: `dist\Samantha-2.8.4-android16.apk` (también en
 `app\build\outputs\apk\release\app-release.apk`).
 
 - `minSdk 26` → Android 8.0 en adelante, incluido **Android 16** (API 36).
@@ -279,11 +298,16 @@ El orbe también reacciona al nivel del micrófono mientras escuchas.
 
 ```
 app/src/main/java/com/cdcb/samanthapp/
-├─ MainActivity.kt   # pantalla, permiso, STT, TTS, memoria y ciclo completo
-├─ SamanthaApi.kt    # POST a OpenCode Go, prompt y limpieza para voz
-├─ MemoryStore.kt    # nombre, recuerdos e historial persistentes
-├─ NameExtractor.kt  # nombre dictado + comandos "recuerda/olvida"
-└─ OrbView.kt        # orbe con Canvas + animación
+├─ MainActivity.kt              # ciclo de vida, UI y orquestación
+├─ TtsController.kt             # TTS, voces, velocidad y revelado palabra a palabra
+├─ SpeechController.kt          # SpeechRecognizer y sus callbacks
+├─ OrbLayoutController.kt       # orientación, insets, tarjetas y foco del orbe
+├─ OledProtectionController.kt  # atenuación, tres puntos y deriva del orbe
+├─ SettingsDialogController.kt   # diálogo de Ajustes
+├─ SamanthaApi.kt               # POST a OpenCode Go, prompt y limpieza para voz
+├─ MemoryStore.kt               # nombre, recuerdos e historial persistentes
+├─ NameExtractor.kt             # nombre dictado + comandos "recuerda/olvida"
+└─ OrbView.kt                   # orbe con Canvas + animación
 app/src/main/assets/persona_samantha.md   # prompt de la persona
 app/src/main/res/
 ├─ layout/{activity_main,dialog_settings}.xml

@@ -227,8 +227,8 @@ Datos actuales de esta app:
 | Dato | Valor |
 |---|---|
 | Paquete | `com.cdcb.samanthapp` |
-| Versión actual | 2.6.0 (`versionCode 45`) |
-| APK | `dist\Samantha-2.6.0-android16.apk` |
+| Versión actual | 2.8.4 (`versionCode 56`) |
+| APK | `dist\Samantha-2.8.4-android16.apk` |
 | Firma actual | Debug (`CN=Android Debug`) |
 | SHA-256 actual | `96:4D:31:DE:31:E0:81:4A:F0:41:AA:9A:2E:4B:10:E8:1E:4D:CA:FB:E8:51:B2:58:C7:98:7E:20:89:3E:D7:01` |
 | `build.gradle.kts` | `signingConfig = signingConfigs.getByName("debug")` |
@@ -244,7 +244,7 @@ Recomendación para uso personal:
 Instalación por ADB (sin registro, para tus teléfonos):
 
 ```powershell
-adb install -r "dist\Samantha-2.6.0-android16.apk"
+adb install -r "dist\Samantha-2.8.4-android16.apk"
 ```
 
 ---

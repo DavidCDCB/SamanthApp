@@ -20,10 +20,10 @@ enum class FranjaHoraria {
 /**
  * Elige el color del fondo según la hora local del teléfono.
  *
- * - Mañana (06:00–11:59): verde agua y dorado, como un amanecer fresco.
- * - Mediodía (12:00–15:59): azul cielo y cian, luz clara.
- * - Tarde (16:00–19:59): naranja, rosa y violeta, atardecer.
- * - Noche (20:00–05:59): índigo y violeta, profundo y tenue.
+ * - Mañana (06:00–11:59): amarillo y dorado.
+ * - Mediodía (12:00–15:59): rojo y coral.
+ * - Tarde (16:00–19:59): verde y esmeralda.
+ * - Noche (20:00–05:59): morado y violeta.
  *
  * Solo aplica al fondo en reposo; los estados activos (escuchar, pensar,
  * hablar, error) conservan su color funcional.
@@ -39,32 +39,32 @@ object FondoHorario {
 
     fun paleta(franja: FranjaHoraria): PaletaHoraria = when (franja) {
         FranjaHoraria.MANANA -> PaletaHoraria(
-            base = 0xFF2DD4BF.toInt(),
-            acento = 0xFFFBBF24.toInt(),
-            secundario = 0xFFFB7185.toInt(),
-            fondo = 0xFF06110F.toInt(),
+            base = 0xFFFACC15.toInt(),
+            acento = 0xFFFEF08A.toInt(),
+            secundario = 0xFFFB923C.toInt(),
+            fondo = 0xFF0F0D04.toInt(),
             intensidad = 1.00f,
         )
         FranjaHoraria.MEDIODIA -> PaletaHoraria(
-            base = 0xFF0EA5E9.toInt(),
-            acento = 0xFF67E8F9.toInt(),
-            secundario = 0xFFA5B4FC.toInt(),
-            fondo = 0xFF04101C.toInt(),
-            intensidad = 1.08f,
+            base = 0xFFEF4444.toInt(),
+            acento = 0xFFFCA5A5.toInt(),
+            secundario = 0xFFF97316.toInt(),
+            fondo = 0xFF150506.toInt(),
+            intensidad = 1.00f,
         )
         FranjaHoraria.TARDE -> PaletaHoraria(
-            base = 0xFFFB923C.toInt(),
-            acento = 0xFFF472B6.toInt(),
-            secundario = 0xFFA78BFA.toInt(),
-            fondo = 0xFF160A0C.toInt(),
-            intensidad = 1.05f,
+            base = 0xFF22C55E.toInt(),
+            acento = 0xFF86EFAC.toInt(),
+            secundario = 0xFF14B8A6.toInt(),
+            fondo = 0xFF04120A.toInt(),
+            intensidad = 1.00f,
         )
         FranjaHoraria.NOCHE -> PaletaHoraria(
-            base = 0xFF4F46E5.toInt(),
-            acento = 0xFF22D3EE.toInt(),
-            secundario = 0xFF8B5CF6.toInt(),
-            fondo = 0xFF04060F.toInt(),
-            intensidad = 0.92f,
+            base = 0xFFA855F7.toInt(),
+            acento = 0xFFD8B4FE.toInt(),
+            secundario = 0xFF6366F1.toInt(),
+            fondo = 0xFF0A0412.toInt(),
+            intensidad = 0.95f,
         )
     }
 
