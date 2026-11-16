@@ -27,6 +27,7 @@ class TtsController(
     private val response: TextView,
     private val responseScroll: NestedScrollView,
     private val languageMode: () -> String,
+    private val cardsVisibles: () -> Boolean,
     private val onSpeaking: () -> Unit,
     private val onFinished: () -> Unit,
     private val onNotReady: () -> Unit,
@@ -366,9 +367,21 @@ class TtsController(
             reveladoHasta = texto.length
             response.text = texto
         }
+        if (cardsVisibles()) {
+            responseScroll.visibility = View.VISIBLE
+            responseScroll.scrollTo(0, 0)
+        } else {
+            responseScroll.visibility = View.GONE
+        }
+        onResponseShown()
+    }
+
+    /** Muestra la respuesta que ya está en pantalla cuando el usuario
+     * enciende las tarjetas desde Ajustes. */
+    fun mostrarTarjetaActual() {
+        if (respuestaActual.isEmpty()) return
         responseScroll.visibility = View.VISIBLE
         responseScroll.scrollTo(0, 0)
-        onResponseShown()
     }
 
     fun cancelReveal() {

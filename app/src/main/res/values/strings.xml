@@ -40,6 +40,11 @@
     <string name="settings_close">Cerrar</string>
     <string name="settings_auto_listen">Escuchar al terminar de hablar</string>
     <string name="settings_auto_listen_hint">Reabre el micrófono después de cada respuesta y te da más tiempo para hablar.</string>
+    <string name="settings_show_cards">Mostrar tarjetas de diálogo</string>
+    <string name="settings_show_cards_hint">Muestra el texto de lo que dices y de la respuesta. Si lo apagas, solo se ve el orbe y Samantha sigue hablando.</string>
+    <string name="settings_initial_memory">Recuerdo inicial</string>
+    <string name="settings_initial_memory_hint">Texto que Samantha tendrá presente al inicio de cada conversación y que no se borra con la memoria automática.</string>
+    <string name="settings_initial_memory_placeholder">Ej.: Vivo en Bogotá, trabajo como…, prefiero respuestas sin rodeos.</string>
     <string name="settings_tts_rate">Velocidad de la voz</string>
     <string name="settings_tts_rate_default">1,05×</string>
     <string name="settings_tts_rate_hint">1,00× es la velocidad normal; 0,50× lenta y 2,00× rápida.</string>

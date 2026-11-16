@@ -46,12 +46,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var speechController: SpeechController
     private var listening = false
+    private var respuestaFijada = false
     internal var history = mutableListOf<Message>()
     internal var expectingName = false
     internal var nameAskedThisSession = false
     internal lateinit var memory: MemoryStore
     internal lateinit var appConfig: SamanthaConfigData
     internal var autoListen = false
+    internal var cardsVisibles = true
+    internal var memoriaInicial = ""
     private var autoListenTtsRetries = 0
     private var errorResetRunnable: Runnable? = null
     internal var languageMode = "es"
@@ -113,6 +116,19 @@ class MainActivity : AppCompatActivity() {
         memory = MemoryStore(this, appConfig.historyLimit)
         history = memory.history()
         autoListen = prefs.getBoolean(KEY_AUTO_LISTEN, false)
+        cardsVisibles = prefs.getBoolean(KEY_CARDS, true)
+        memoriaInicial = prefs.getString(KEY_INITIAL_MEMORY, "").orEmpty()
+        // Si el usuario escribió "Me llamo..." en el recuerdo inicial, se usa
+        // como nombre para no preguntárselo aunque aún no lo haya dicho por voz.
+        if (memory.userName.isBlank()) {
+            NameExtractor.extract(memoriaInicial, allowSoy = false)
+                ?.let { memory.userName = it }
+        }
+        Log.i(
+            "Samantha",
+            "memoria: inicial=${memoriaInicial.isNotBlank()}, " +
+                "nombre=${memory.userName.isNotBlank()}",
+        )
         languageMode = prefs.getString(KEY_LANGUAGE, "es")
             ?.takeIf { it == "en" } ?: "es"
         Log.i("Samantha", "razonamiento: ${reasoningEffortActual()}")
@@ -144,6 +160,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.orb.setOnClickListener { toggleListening() }
         binding.settingsButton.setOnClickListener { settingsController.open() }
+        binding.responseScroll.isClickable = true
+        binding.responseScroll.setOnClickListener { fijarRespuesta() }
+        binding.response.isClickable = true
+        binding.response.setOnClickListener { fijarRespuesta() }
         binding.backdrop.setMode("on")
         updateUi(estadoReposo())
 
@@ -157,14 +177,21 @@ class MainActivity : AppCompatActivity() {
             response = binding.response,
             responseScroll = binding.responseScroll,
             languageMode = { languageMode },
+            cardsVisibles = { cardsVisibles },
             onSpeaking = { updateUi(OrbView.State.SPEAKING) },
             onFinished = {
                 Log.i("Samantha", "TTS terminó; auto-listen=$autoListen")
                 scheduleAutoListen()
+                programarOcultarRespuesta()
                 updateUi(estadoReposo())
             },
             onNotReady = { updateUi(estadoReposo()) },
-            onResponseShown = { layoutController.rebalance() },
+            onResponseShown = {
+                respuestaFijada = false
+                binding.root.removeCallbacks(ocultarRespuestaRunnable)
+                binding.transcript.visibility = View.GONE
+                layoutController.rebalance()
+            },
             onPreviewStarting = {
                 if (!enReposo(binding.orb.state)) updateUi(estadoReposo())
                 binding.root.removeCallbacks(autoListenRunnable)
@@ -188,8 +215,46 @@ class MainActivity : AppCompatActivity() {
 
     internal val autoListenRunnable = Runnable { maybeAutoListen() }
 
+    /**
+     * La respuesta se queda unos segundos para leerla o tocarla. Si no se
+     * fija, se retira sola; si se toca, [fijarRespuesta] cancela este aviso y
+     * la mantiene hasta el siguiente toque fuera.
+     */
+    private val ocultarRespuestaRunnable = Runnable {
+        if (!respuestaFijada) ocultarRespuesta()
+    }
+
+    /**
+     * Aplica el interruptor de Ajustes: con las tarjetas apagadas solo queda
+     * el orbe; al encenderlas vuelve a verse la respuesta si la hay.
+     */
+    internal fun aplicarVisibilidadTarjetas() {
+        if (cardsVisibles) {
+            ttsController.mostrarTarjetaActual()
+            val estado = binding.orb.state
+            val enTurno = estado == OrbView.State.LISTENING ||
+                estado == OrbView.State.HEARING ||
+                estado == OrbView.State.TRANSCRIBING
+            if (enTurno && binding.transcript.text.isNotBlank()) {
+                binding.transcript.visibility = View.VISIBLE
+            }
+        } else {
+            cancelarReposoTrasError()
+            binding.root.removeCallbacks(ocultarRespuestaRunnable)
+            binding.responseScroll.visibility = View.GONE
+            binding.transcript.visibility = View.GONE
+        }
+        layoutController.rebalance()
+    }
+
+    private fun programarOcultarRespuesta() {
+        binding.root.removeCallbacks(ocultarRespuestaRunnable)
+        if (respuestaFijada) return
+        binding.root.postDelayed(ocultarRespuestaRunnable, RESPUESTA_AUTO_OCULTAR_MS)
+    }
+
     private fun scheduleAutoListen() {
-        if (!autoListen) return
+        if (!autoListen || respuestaFijada) return
         autoListenTtsRetries = 0
         binding.root.removeCallbacks(autoListenRunnable)
         // 200 ms de margen para que no se cuele la cola del TTS. Si la voz
@@ -204,7 +269,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun maybeAutoListen() {
-        if (!autoListen || listening || isFinishing) return
+        if (!autoListen || respuestaFijada || listening || isFinishing) return
         // Algunos motores TTS llaman onDone antes de terminar el audio.
         // No se abre el micrófono hasta que el motor deje de hablar.
         if (ttsController.isSpeaking()) {
@@ -407,7 +472,12 @@ class MainActivity : AppCompatActivity() {
         binding.root.removeCallbacks(wakeWordRunnable)
         wakeWordEngine?.detener()
         listening = true
-        binding.responseScroll.visibility = View.GONE
+        // En la escucha automática la respuesta se queda visible para poder
+        // leerla o fijarla; se retira cuando el usuario empieza a hablar.
+        if (!automatic) {
+            respuestaFijada = false
+            ocultarRespuesta(rebalance = false)
+        }
         binding.transcript.visibility = View.GONE
         layoutController.rebalance()
         updateUi(OrbView.State.LISTENING)
@@ -463,8 +533,9 @@ class MainActivity : AppCompatActivity() {
             showError(getString(R.string.error_no_match))
             return
         }
+        if (!respuestaFijada) ocultarRespuesta(rebalance = false)
         binding.transcript.text = texto
-        binding.transcript.visibility = View.VISIBLE
+        binding.transcript.visibility = if (cardsVisibles) View.VISIBLE else View.GONE
         layoutController.rebalance()
         updateUi(OrbView.State.THINKING)
         handleMemoryOrModel(texto)
@@ -472,8 +543,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun onSpeechPartial(texto: String) {
         if (texto.isNotEmpty()) {
+            if (!respuestaFijada) ocultarRespuesta(rebalance = false)
             binding.transcript.text = texto
-            binding.transcript.visibility = View.VISIBLE
+            binding.transcript.visibility = if (cardsVisibles) View.VISIBLE else View.GONE
             layoutController.rebalance()
         }
     }
@@ -544,7 +616,10 @@ class MainActivity : AppCompatActivity() {
         val nombre = memory.userName
         val recuerdos = memory.facts()
         // Si no hay nombre y no se ha pedido en esta sesión, el modelo lo pregunta.
-        val pedirNombre = nombre.isBlank() && !nameAskedThisSession
+        // Con un recuerdo inicial escrito por el usuario no se pregunta: puede
+        // contener su nombre y el modelo ya lo tiene en el prompt.
+        val pedirNombre = nombre.isBlank() && !nameAskedThisSession &&
+            memoriaInicial.isBlank()
 
         lifecycleScope.launch {
             val resultado = withContext(Dispatchers.IO) {
@@ -556,7 +631,6 @@ class MainActivity : AppCompatActivity() {
                         sessionId(),
                         SamanthaApi.loadPersona(applicationContext),
                         reasoningEffortActual(),
-                        appConfig.maxTokens,
                         appConfig.temperature,
                         appConfig.firecrawlApiKey,
                         appConfig.firecrawlMaxResults,
@@ -564,6 +638,9 @@ class MainActivity : AppCompatActivity() {
                         appConfig.firecrawlCountry,
                         appConfig.firecrawlTimeoutMs,
                         appConfig.historyLimit,
+                        memoriaInicial,
+                        appConfig.tavilyApiKey,
+                        appConfig.tavilyTimeoutMs,
                     ).chat(history, texto, nombre, recuerdos, pedirNombre, languageMode)
                 }
             }
@@ -838,8 +915,58 @@ class MainActivity : AppCompatActivity() {
      * orbe para que ningún píxel reciba siempre el mismo brillo. Cualquier
      * toque o la wake word llaman a [oled] y restauran todo.
      */
+    /**
+     * Fija la tarjeta de respuesta con un toque: cancela la escucha automática
+     * y la mantiene visible hasta el siguiente toque fuera de ella.
+     */
+    private fun fijarRespuesta() {
+        if (binding.responseScroll.visibility != View.VISIBLE) return
+        respuestaFijada = true
+        binding.root.removeCallbacks(autoListenRunnable)
+        binding.root.removeCallbacks(ocultarRespuestaRunnable)
+        cancelarReposoTrasError()
+        if (listening) {
+            listening = false
+            speechController.cancel()
+            updateUi(estadoReposo())
+        }
+        Log.i("Samantha", "respuesta fijada para lectura")
+    }
+
+    private fun ocultarRespuesta(rebalance: Boolean = true) {
+        binding.root.removeCallbacks(ocultarRespuestaRunnable)
+        if (binding.responseScroll.visibility == View.GONE &&
+            binding.response.text.isEmpty()
+        ) {
+            return
+        }
+        binding.responseScroll.visibility = View.GONE
+        binding.response.text = ""
+        if (rebalance) layoutController.rebalance()
+    }
+
+    private fun toqueDentroRespuesta(ev: MotionEvent): Boolean {
+        if (binding.responseScroll.visibility != View.VISIBLE) return false
+        val posicion = IntArray(2)
+        binding.responseScroll.getLocationOnScreen(posicion)
+        return ev.rawX >= posicion[0] &&
+            ev.rawX <= posicion[0] + binding.responseScroll.width &&
+            ev.rawY >= posicion[1] &&
+            ev.rawY <= posicion[1] + binding.responseScroll.height
+    }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (ev.actionMasked == MotionEvent.ACTION_DOWN) oled.onUserActivity()
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            oled.onUserActivity()
+            if (respuestaFijada && !toqueDentroRespuesta(ev)) {
+                respuestaFijada = false
+                ocultarRespuesta()
+                if (binding.orb.state == OrbView.State.ERROR) {
+                    updateUi(estadoReposo())
+                }
+                Log.i("Samantha", "respuesta liberada por toque fuera")
+            }
+        }
         return super.dispatchTouchEvent(ev)
     }
 
@@ -911,12 +1038,20 @@ class MainActivity : AppCompatActivity() {
         internal const val KEY_AUTO_LISTEN = "auto_listen"
         internal const val KEY_REASONING = "reasoning_effort"
         internal const val KEY_LANGUAGE = "language_mode"
+        internal const val KEY_CARDS = "show_cards"
+        internal const val KEY_INITIAL_MEMORY = "initial_memory"
 
         /** Margen después del TTS para que no se cuele la cola de la voz. */
         private const val AUTO_LISTEN_DELAY_MS = 200L
 
         /** Tiempo que el orbe permanece rojo cuando no se oye voz. */
         private const val ERROR_NO_SPEECH_RESET_MS = 3500L
+
+        /**
+         * Tiempo que la respuesta del TTS queda visible sin tocarla, para
+         * poder leerla o fijarla. Si se toca, no se oculta.
+         */
+        private const val RESPUESTA_AUTO_OCULTAR_MS = 5000L
 
         /** Niveles de razonamiento que acepta el backend. */
         internal val NIVELES_RAZONAMIENTO =

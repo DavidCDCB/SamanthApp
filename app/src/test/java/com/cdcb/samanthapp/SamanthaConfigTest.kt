@@ -66,10 +66,30 @@ class SamanthaConfigTest {
     }
 
     @Test
+    fun `lee la seccion tavily`() {
+        val cfg = SamanthaConfig.parse(
+            """
+            tavily:
+              api_key: "tvly-prueba"
+              timeout: 25
+            """.trimIndent()
+        )
+        assertEquals("tvly-prueba", cfg.tavilyApiKey)
+        assertEquals(25_000, cfg.tavilyTimeoutMs)
+    }
+
+    @Test
+    fun `tavily sin config queda desactivado`() {
+        val cfg = SamanthaConfig.parse("")
+        assertEquals("", cfg.tavilyApiKey)
+        assertEquals(20_000, cfg.tavilyTimeoutMs)
+    }
+
+    @Test
     fun `firecrawl sin config queda desactivado`() {
         val cfg = SamanthaConfig.parse("")
         assertEquals("", cfg.firecrawlApiKey)
-        assertEquals(5, cfg.firecrawlMaxResults)
+        assertEquals(10, cfg.firecrawlMaxResults)
         assertEquals(15_000, cfg.firecrawlTimeoutMs)
     }
 

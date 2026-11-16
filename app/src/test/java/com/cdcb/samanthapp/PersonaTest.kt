@@ -94,6 +94,33 @@ class PersonaTest {
     }
 
     @Test
+    fun recuerdoInicialSeIncluyeEnElPrompt() {
+        val prompt = SamanthaApi.composeSystemPrompt(
+            persona = "P",
+            userName = "Ana",
+            facts = listOf("le gusta el té"),
+            fecha = "hoy",
+            initialMemory = "Tengo un perro llamado Toby.\nPrefiero respuestas directas.",
+        )
+        assertTrue(prompt.contains("## Recuerdo inicial"))
+        assertTrue(prompt.contains("Toby"))
+        assertTrue(prompt.contains("respuestas directas"))
+        assertTrue(prompt.contains("## Recuerdos guardados"))
+    }
+
+    @Test
+    fun sinRecuerdoInicialNoAgregaLaSeccion() {
+        val prompt = SamanthaApi.composeSystemPrompt(
+            persona = "P",
+            userName = "Ana",
+            facts = emptyList(),
+            fecha = "hoy",
+            initialMemory = "",
+        )
+        assertFalse(prompt.contains("## Recuerdo inicial"))
+    }
+
+    @Test
     fun modoEspanolMantieneEspanolComoDefecto() {
         val prompt = SamanthaApi.composeSystemPrompt(
             persona = "P",

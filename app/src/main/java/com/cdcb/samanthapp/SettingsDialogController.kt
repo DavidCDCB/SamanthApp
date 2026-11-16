@@ -2,6 +2,7 @@ package com.cdcb.samanthapp
 
 import android.app.Dialog
 import android.content.Intent
+import android.graphics.Rect
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
@@ -60,7 +61,9 @@ class SettingsDialogController(
             val memoryInfo = vista.findViewById<TextView>(R.id.memoryInfo)
             val clearButton = vista.findViewById<MaterialButton>(R.id.clearMemoryButton)
             val voiceButton = vista.findViewById<MaterialButton>(R.id.voiceButton)
+            val initialMemoryInput = vista.findViewById<EditText>(R.id.initialMemoryInput)
             val autoSwitch = vista.findViewById<MaterialSwitch>(R.id.autoListenSwitch)
+        val cardsSwitch = vista.findViewById<MaterialSwitch>(R.id.cardsSwitch)
             val ttsRateSlider = vista.findViewById<Slider>(R.id.ttsRateSlider)
             val ttsRateValue = vista.findViewById<TextView>(R.id.ttsRateValue)
             val languageGroup = vista.findViewById<MaterialButtonToggleGroup>(R.id.languageGroup)
@@ -92,9 +95,18 @@ class SettingsDialogController(
                 razonamientoSeleccionado = MainActivity.NIVELES_RAZONAMIENTO[position]
             }
             reasoningInput.setOnClickListener { reasoningInput.showDropDown() }
+            initialMemoryInput.setText(memoriaInicial)
             memoryInfo.text = getString(R.string.settings_memory_info, memory.facts().size)
             Log.i("Samantha", "ajustes: ${memory.facts().size} recuerdos")
             autoSwitch.isChecked = autoListen
+        cardsSwitch.isChecked = cardsVisibles
+        cardsSwitch.setOnCheckedChangeListener { _, marcado ->
+            // Se aplica y se guarda al instante: si se enciende, vuelve a
+            // mostrarse la respuesta actual; si se apaga, solo queda el orbe.
+            cardsVisibles = marcado
+            prefs.edit().putBoolean(MainActivity.KEY_CARDS, marcado).apply()
+            aplicarVisibilidadTarjetas()
+        }
             ttsRateSlider.value = ttsController.speechRate.coerceIn(0.5f, 2.0f)
             ttsRateValue.text = String.format(Locale("es", "CO"), "%.2f×", ttsRateSlider.value)
             ttsRateSlider.addOnChangeListener { _, value, fromUser ->
@@ -187,7 +199,6 @@ class SettingsDialogController(
                                 sessionId(),
                                 SamanthaApi.loadPersona(applicationContext),
                                 razonamientoSeleccionado,
-                                appConfig.maxTokens,
                                 appConfig.temperature,
                                 appConfig.firecrawlApiKey,
                                 appConfig.firecrawlMaxResults,
@@ -195,6 +206,9 @@ class SettingsDialogController(
                                 appConfig.firecrawlCountry,
                                 appConfig.firecrawlTimeoutMs,
                                 appConfig.historyLimit,
+                        memoriaInicial,
+                        appConfig.tavilyApiKey,
+                        appConfig.tavilyTimeoutMs,
                             ).chat(
                                 emptyList(),
                                 if (languageMode == "en") "Introduce yourself in one sentence."
@@ -236,6 +250,15 @@ class SettingsDialogController(
                 val nuevoBackground =
                     wakeModeGroup.checkedButtonId == R.id.wakeModeBackground
 
+                val nuevaMemoria = initialMemoryInput.text.toString().trim()
+                val memoriaAnterior = memoriaInicial
+                memoriaInicial = nuevaMemoria
+                val nombreInicial = NameExtractor.extract(nuevaMemoria, allowSoy = false)
+                if (nombreInicial != null &&
+                    (memoriaAnterior != nuevaMemoria || memory.userName.isBlank())
+                ) {
+                    memory.userName = nombreInicial
+                }
                 autoListen = autoSwitch.isChecked
                 if (!autoListen) {
                     binding.root.removeCallbacks(autoListenRunnable)
@@ -247,6 +270,8 @@ class SettingsDialogController(
                     .putString(MainActivity.KEY_MODEL, modelo)
                     .putString(MainActivity.KEY_REASONING, razonamiento)
                     .putBoolean(MainActivity.KEY_AUTO_LISTEN, autoListen)
+                .putBoolean(MainActivity.KEY_CARDS, cardsVisibles)
+                    .putString(MainActivity.KEY_INITIAL_MEMORY, memoriaInicial)
                     .putString(MainActivity.KEY_LANGUAGE, nuevoIdioma)
                     .putBoolean(WakeWordSettings.KEY_ENABLED, wakeWordEnabled)
                     .putBoolean(WakeWordSettings.KEY_BACKGROUND, wakeWordBackground)
@@ -300,12 +325,25 @@ class SettingsDialogController(
                     WindowInsetsCompat.Type.systemBars() or
                         WindowInsetsCompat.Type.displayCutout()
                 )
+                val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+                // Con el teclado abierto el contenido sube por encima de él:
+                // la barra de Guardar/Cancelar queda visible y el ScrollView
+                // puede desplazar el campo enfocado.
                 v.setPadding(
                     bars.left + dp(8),
                     bars.top + dp(8),
                     bars.right + dp(8),
-                    bars.bottom + dp(8)
+                    maxOf(bars.bottom, ime.bottom) + dp(8),
                 )
+                if (ime.bottom > 0) {
+                    v.postDelayed({
+                        val foco = v.findFocus() ?: return@postDelayed
+                        foco.requestRectangleOnScreen(
+                            Rect(0, 0, foco.width, foco.height),
+                            true,
+                        )
+                    }, 180L)
+                }
                 insets
             }
             dialogo.window?.let { pantallaCompleta(it) }

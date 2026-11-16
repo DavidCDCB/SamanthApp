@@ -14,13 +14,19 @@ ai:
   max_tokens: 800
   temperature: 0.6
 
-# Búsqueda web con Firecrawl
+# Búsqueda web con Firecrawl (respaldo si no hay Tavily)
 firecrawl:
   api_key: "fc-03fe2debb761405e9d94b0a468d2fc1c"
-  max_results: 5
+  max_results: 10
   timeout: 15
   lang: "es"
   country: "CO"
+
+# Búsqueda web con Tavily (recomendado: 1 crédito por consulta)
+# Rellena api_key con tvly-...; si está vacía se usa Firecrawl.
+tavily:
+  api_key: "tvly-h49dR-bDzCNjb68Jd85HlDs8SFivLPpXdVi4dxyaArlOmJHf"
+  timeout: 20
 
 memory:
   recent_window: 20

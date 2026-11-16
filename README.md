@@ -29,6 +29,21 @@ completo **voz → modelo → voz**.
 - **Texto sincronizado con la voz**: la respuesta aparece palabra por palabra
   mientras el TTS habla, con la palabra actual resaltada. Si el motor no envía
   rangos de voz, un temporizador de respaldo hace el mismo efecto.
+- **Tarjetas separadas**: mientras hablas se ve la tarjeta de **transcripción**
+  (STT); cuando el modelo responde, esa tarjeta se oculta y queda solo la del
+  **TTS**. Ambas tienen fondo translúcido para dejar ver el fondo animado.
+- **Tarjetas opcionales**: en Ajustes, **«Mostrar tarjetas de diálogo»**
+  (activado por defecto). Al apagarlo solo se ve el orbe; la transcripción y la
+  respuesta se siguen generando para la voz, pero no se muestran. El cambio se
+  aplica al instante.
+- **Recuerdo inicial**: al final de Ajustes hay un área de texto. Lo que
+  escribas ahí se añade al prompt de cada turno como memoria permanente; no
+  cuenta para el límite de recuerdos automáticos y **no se borra** con
+  «Borrar memoria». Si escribes «Me llamo …», la app lo usa como nombre y no
+  te lo vuelve a preguntar.
+- **Leer con calma**: la respuesta se queda **5 s** después de que termina la
+  voz; si la tocas, se fija y se mantiene hasta el siguiente toque fuera de
+  ella. Un toque en el orbe vuelve a empezar un turno normal.
 - **Fondo animado a pantalla completa**: aurora multicapa, cortinas que flotan,
   polvo con parpadeo, luciérnagas y anillos lentos que nacen del centro real
   del orbe; en reposo aparece de vez en cuando una estrella fugaz. El color
@@ -51,6 +66,9 @@ completo **voz → modelo → voz**.
 - **Nivel de razonamiento**: en Ajustes hay una lista desplegable con
   **low, medium, high, xhigh y max**. Se guarda en el teléfono y se usa en cada
   turno; si el modelo no acepta el nivel, la app reintenta sin `reasoning_effort`.
+  La app **no envía `max_tokens`**: el modelo decide cuánto razonar y responder.
+  Si aun así devuelve una respuesta vacía, se reintenta sin razonamiento para
+  no quedarse en "null".
 - **Horizontal**: al girar el teléfono, el orbe queda **centrado** si no hay
   tarjetas; cuando aparece una transcripción o respuesta, pasa a la mitad
   izquierda y las tarjetas a la derecha. El orbe se ajusta al alto visible y
@@ -183,15 +201,18 @@ ai:
   base_url: "https://opencode.ai/inference/go/openai/v1"
   model: "claude-haiku-5-5"
   reasoning_effort: "high"
-  max_tokens: 800
   temperature: 0.6
 
 memory:
   recent_window: 8   # mensajes (2 = 1 intercambio); 2–200
 
+tavily:
+  api_key: ""          # pega aquí la key tvly-...
+  timeout: 20
+
 firecrawl:
-  api_key: ""          # pega aquí la key fc-...
-  max_results: 5
+  api_key: ""          # respaldo si no hay Tavily; pega aquí la key fc-...
+  max_results: 10
   timeout: 15
   lang: "es"
   country: "CO"
@@ -199,7 +220,8 @@ firecrawl:
 
 - `reasoning_effort`: `low | medium | high | xhigh | max` según el modelo.
   Por defecto **high** (más razonamiento, respuestas más lentas que con `low`).
-- `max_tokens` y `temperature` también se leen de ahí.
+- `temperature` también se lee de ahí. `max_tokens` ya no se usa: la respuesta
+  no lleva tope de longitud.
 - El `model` de **Ajustes** (si lo guardas) manda sobre el del archivo; el resto
   de parámetros sale siempre del YAML.
 - **`memory.recent_window`**: cantidad de mensajes recientes que se conservan
@@ -220,19 +242,30 @@ adb push config.yaml /sdcard/Android/data/com.cdcb.samanthapp/files/config.yaml
 
 El valor activo queda en logcat con la etiqueta `SamanthaConfig`.
 
-## Búsqueda web (Firecrawl)
+## Búsqueda web (Tavily, con Firecrawl de respaldo)
 
-- El modelo recibe una herramienta `web_search` cuando `firecrawl.api_key` no
-  está vacía. La usa para noticias, precios, eventos o datos recientes; no para
-  definiciones que ya sabe.
-- Firecrawl devuelve título, resumen y URL; la app no descarga la página
-  completa, así que no gasta créditos de scraping.
-- Límite de voz: como máximo **2 búsquedas por turno**; después el modelo
-  responde sin herramientas.
-- Si Firecrawl rechaza la key (401), se queda sin créditos (402) o falla la
-  red, el modelo recibe el error y debe decirlo; no inventa resultados.
-- No hay respaldo a DuckDuckGo en Android todavía; la búsqueda web requiere una
-  key válida de Firecrawl en `config.yaml`.
+- El modelo recibe la herramienta `web_search` si `tavily.api_key` o
+  `firecrawl.api_key` no están vacías. La usa para noticias, precios, eventos o
+  datos recientes; no para definiciones que ya sabe.
+- **Tavily** es el proveedor principal: `POST /search` con
+  `search_depth: "basic"` (**1 crédito**), hasta 10 resultados y
+  `include_raw_content: "markdown"`. Cada resultado trae título, resumen, URL y
+  el contenido limpio de la página.
+- Si Tavily no devuelve `raw_content` para algún enlace, la app intenta leerlo
+  con **Jsoup** en el teléfono (solo HTTPS). Si tampoco se puede (JavaScript,
+  anti-bot, PDF), queda el resumen y se avisa de que no hay contenido.
+- **Firecrawl** queda como respaldo si no hay clave de Tavily: 2 créditos por
+  búsqueda (1–10 resultados) y lectura local con Jsoup, sin scrape.
+- Límites del lector: 1.500 caracteres por página, 15.000 en total, 8 s por
+  página y 12 s para todas. El modelo puede encadenar hasta **8 búsquedas** y
+  **12 iteraciones** por turno.
+- Tavily incluye **1.000 créditos gratis al mes**; después, 0,008 USD por
+  crédito en pago por uso. Un `web_search` básico con 10 resultados gasta 1
+  crédito, no 10.
+- Si el proveedor rechaza la key (401), se agota la cuota (429/432/433) o falla
+  la red, el modelo recibe el error y debe decirlo; no inventa resultados.
+- No hay respaldo a DuckDuckGo en Android: hace falta una key válida de Tavily
+  o, en su defecto, de Firecrawl en `config.yaml`.
 
 ## APK release
 
@@ -241,7 +274,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat :app:assembleRelease
 ```
 
-Salida: `dist\Samantha-2.8.4-android16.apk` (también en
+Salida: `dist\Samantha-2.10.0-android16.apk` (también en
 `app\build\outputs\apk\release\app-release.apk`).
 
 - `minSdk 26` → Android 8.0 en adelante, incluido **Android 16** (API 36).

@@ -10,8 +10,8 @@ android {
         applicationId = "com.cdcb.samanthapp"
         minSdk = 26
         targetSdk = 37
-        versionCode = 56
-        versionName = "2.8.4-SamanthApp"
+        versionCode = 68
+        versionName = "2.10.0-SamanthApp"
 
         // Vosk trae librerías nativas; el teléfono es arm64 y el APK se
         // mantiene razonable para sideload.
@@ -57,6 +57,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.material)
     implementation(libs.kotlinx.coroutines.android)
+    implementation("org.jsoup:jsoup:1.18.3")
 
     // Wake word offline con Vosk (incluye JNA y las librerías nativas).
     implementation("com.alphacephei:vosk-android:0.3.75@aar")

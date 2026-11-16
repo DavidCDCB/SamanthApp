@@ -11,10 +11,12 @@ data class SamanthaConfigData(
     val maxTokens: Int = 800,
     val temperature: Double = 0.6,
     val firecrawlApiKey: String = "",
-    val firecrawlMaxResults: Int = 5,
+    val firecrawlMaxResults: Int = 10,
     val firecrawlLang: String = "es",
     val firecrawlCountry: String = "CO",
     val firecrawlTimeoutMs: Int = 15_000,
+    val tavilyApiKey: String = "",
+    val tavilyTimeoutMs: Int = 20_000,
     val historyLimit: Int = 8,
 )
 
@@ -40,7 +42,8 @@ object SamanthaConfig {
             "config=${archivo.absolutePath} model=${config.model} " +
                 "reasoning=${config.reasoningEffort} max_tokens=${config.maxTokens} " +
                 "temperature=${config.temperature} history=${config.historyLimit} " +
-                "firecrawl=${if (config.firecrawlApiKey.isNotBlank()) "sí (${config.firecrawlApiKey.length} chars)" else "no"}"
+                "firecrawl=${if (config.firecrawlApiKey.isNotBlank()) "sí (${config.firecrawlApiKey.length} chars)" else "no"} " +
+                "tavily=${if (config.tavilyApiKey.isNotBlank()) "sí (${config.tavilyApiKey.length} chars)" else "no"}"
         )
         return config
     }
@@ -67,10 +70,12 @@ object SamanthaConfig {
         var maxTokens = 800
         var temperature = 0.6
         var firecrawlKey = ""
-        var firecrawlMax = 5
+        var firecrawlMax = 10
         var firecrawlLang = "es"
         var firecrawlCountry = "CO"
         var firecrawlTimeout = 15
+        var tavilyKey = ""
+        var tavilyTimeout = 20
         var historyLimit = 8
         var seccion = ""
 
@@ -81,7 +86,11 @@ object SamanthaConfig {
                 seccion = linea.dropLast(1).trim().lowercase()
                 continue
             }
-            if (seccion != "ai" && seccion != "firecrawl" && seccion != "memory") continue
+            if (seccion != "ai" && seccion != "firecrawl" && seccion != "tavily" &&
+                seccion != "memory"
+            ) {
+                continue
+            }
             val corte = linea.indexOf(':')
             if (corte <= 0) continue
             val clave = linea.substring(0, corte).trim().lowercase()
@@ -109,6 +118,12 @@ object SamanthaConfig {
                         ?.takeIf { it in 5..60 }
                         ?.let { firecrawlTimeout = it }
                 }
+                "tavily" -> when (clave) {
+                    "api_key" -> tavilyKey = valor
+                    "timeout" -> valor.toIntOrNull()
+                        ?.takeIf { it in 5..60 }
+                        ?.let { tavilyTimeout = it }
+                }
                 "memory" -> when (clave) {
                     "recent_window", "history_limit" -> valor.toIntOrNull()
                         ?.takeIf { it in 2..200 }
@@ -128,6 +143,8 @@ object SamanthaConfig {
             firecrawlLang,
             firecrawlCountry,
             firecrawlTimeout * 1000,
+            tavilyKey,
+            tavilyTimeout * 1000,
             historyLimit,
         )
     }

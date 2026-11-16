@@ -26,17 +26,22 @@ class SamanthaApi(
     private val sessionId: String,
     private val persona: String,
     private val reasoningEffort: String = "high",
-    private val maxTokens: Int = 800,
     private val temperature: Double = 0.6,
     private val firecrawlApiKey: String = "",
-    private val firecrawlMaxResults: Int = 5,
+    private val firecrawlMaxResults: Int = 10,
     private val firecrawlLang: String = "es",
     private val firecrawlCountry: String = "CO",
     private val firecrawlTimeoutMs: Int = 15_000,
     private val historyLimit: Int = 8,
+    private val initialMemory: String = "",
+    private val tavilyApiKey: String = "",
+    private val tavilyTimeoutMs: Int = 20_000,
 ) {
 
     class ApiException(message: String, val code: Int) : Exception(message)
+
+    private val searchEnabled: Boolean =
+        firecrawlApiKey.isNotBlank() || tavilyApiKey.isNotBlank()
 
     fun chat(
         history: List<Message>,
@@ -47,7 +52,27 @@ class SamanthaApi(
         languageMode: String = "es",
     ): String {
         val effort = reasoningEffort.trim().ifEmpty { null }
-        if (firecrawlApiKey.isNotBlank()) {
+        val primera = intentar(history, userText, effort, userName, facts, askName, languageMode)
+        if (esRespuestaVacia(primera) && effort != null) {
+            // Con effort alto el modelo puede gastar todos los tokens razonando
+            // y devolver content=null. Se reintenta sin razonamiento.
+            Log.i("Samantha", "respuesta vacía con reasoning=$effort; reintento sin él")
+            val segunda = intentar(history, userText, null, userName, facts, askName, languageMode)
+            if (!esRespuestaVacia(segunda)) return segunda
+        }
+        return if (esRespuestaVacia(primera)) TOOL_LOOP_FALLBACK else primera
+    }
+
+    private fun intentar(
+        history: List<Message>,
+        userText: String,
+        effort: String?,
+        userName: String,
+        facts: List<String>,
+        askName: Boolean,
+        languageMode: String,
+    ): String {
+        if (searchEnabled) {
             return try {
                 chatWithTools(history, userText, effort, userName, facts, askName, languageMode)
             } catch (e: ApiException) {
@@ -74,6 +99,21 @@ class SamanthaApi(
         }
     }
 
+    /** `content: null` de JSON no debe convertirse en la cadena "null". */
+    private fun textoDe(mensaje: JSONObject?): String {
+        if (mensaje == null) return ""
+        return when (val valor = mensaje.opt("content")) {
+            null, JSONObject.NULL -> ""
+            is String -> valor
+            else -> valor.toString()
+        }
+    }
+
+    private fun esRespuestaVacia(texto: String): Boolean {
+        val limpio = texto.trim()
+        return limpio.isEmpty() || limpio.equals("null", ignoreCase = true)
+    }
+
     /** Turno con tool calling: el modelo puede pedir web_search y reintentar. */
     private fun chatWithTools(
         history: List<Message>,
@@ -86,16 +126,15 @@ class SamanthaApi(
     ): String {
         val convo = buildMessages(history, userText, userName, facts, askName, languageMode)
         val tools = toolsJson()
-        val limiteTokens = maxOf(maxTokens, TOOL_MAX_TOKENS)
         var research = 0
         var ultimoTexto = ""
         for (iteracion in 0 until MAX_TOOL_ITERATIONS) {
-            val response = postChat(convo, tools, reasoningEffort, limiteTokens)
+            val response = postChat(convo, tools, reasoningEffort)
             val message = response.optJSONArray("choices")
                 ?.optJSONObject(0)
                 ?.optJSONObject("message")
                 ?: return ultimoTexto.ifBlank { TOOL_LOOP_FALLBACK }
-            val content = message.optString("content")
+            val content = textoDe(message)
             if (content.isNotBlank()) ultimoTexto = content
             val calls = message.optJSONArray("tool_calls")
             if (calls == null || calls.length() == 0) {
@@ -129,6 +168,8 @@ class SamanthaApi(
                         firecrawlLang,
                         firecrawlCountry,
                         firecrawlTimeoutMs,
+                        tavilyApiKey,
+                        tavilyTimeoutMs,
                     ).search(query, limit)
                     Log.i("Samantha", "web_search: ${busqueda.length} chars")
                     busqueda
@@ -144,11 +185,11 @@ class SamanthaApi(
             }
 
             if (research >= MAX_RESEARCH_CALLS) {
-                return contenidoDe(postChat(convo, null, reasoningEffort, limiteTokens))
+                return contenidoDe(postChat(convo, null, reasoningEffort))
                     .ifBlank { TOOL_LOOP_FALLBACK }
             }
         }
-        return contenidoDe(postChat(convo, null, reasoningEffort, limiteTokens))
+        return contenidoDe(postChat(convo, null, reasoningEffort))
             .ifBlank { TOOL_LOOP_FALLBACK }
     }
 
@@ -177,12 +218,10 @@ class SamanthaApi(
         messages: JSONArray,
         tools: JSONArray?,
         reasoningEffort: String?,
-        maxTokensOverride: Int = maxTokens,
     ): JSONObject {
         val body = JSONObject()
             .put("model", model)
             .put("messages", messages)
-            .put("max_tokens", maxTokensOverride)
             .put("temperature", temperature)
         if (reasoningEffort != null) body.put("reasoning_effort", reasoningEffort)
         if (tools != null) {
@@ -194,7 +233,7 @@ class SamanthaApi(
             .openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
-            readTimeout = 60_000
+            readTimeout = 180_000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer $apiKey")
@@ -216,12 +255,10 @@ class SamanthaApi(
     }
 
     private fun contenidoDe(response: JSONObject): String {
-        val content = response.optJSONArray("choices")
+        val message = response.optJSONArray("choices")
             ?.optJSONObject(0)
             ?.optJSONObject("message")
-            ?.optString("content")
-            .orEmpty()
-        return cleanForSpeech(content).trim()
+        return cleanForSpeech(textoDe(message)).trim()
     }
 
     private fun toolsJson(): JSONArray {
@@ -242,7 +279,7 @@ class SamanthaApi(
                             .put("type", "integer")
                             .put("minimum", 1)
                             .put("maximum", 10)
-                            .put("description", "Número de resultados (1-10).")
+                            .put("description", "Número de resultados (1-10). Usa 10 para preguntas amplias.")
                     )
             )
             .put("required", JSONArray().put("query"))
@@ -251,9 +288,10 @@ class SamanthaApi(
             .put(
                 "description",
                 "Busca en la web información actual o verificable: noticias, " +
-                    "precios, eventos, personas o datos recientes. Devuelve título, " +
-                    "resumen y URL. Usa una consulta corta y natural; no la uses " +
-                    "para definiciones que ya conoces."
+                    "precios, eventos, personas o datos recientes. Devuelve hasta 10 " +
+                    "resultados con título, resumen, URL y el contenido principal " +
+                    "leído de cada página. Usa una consulta corta y natural; no la " +
+                    "uses para definiciones que ya conoces."
             )
             .put("parameters", parametros)
         return JSONArray().put(JSONObject().put("type", "function").put("function", funcion))
@@ -282,7 +320,6 @@ class SamanthaApi(
         val body = JSONObject()
             .put("model", model)
             .put("messages", messages)
-            .put("max_tokens", maxTokens)
             .put("temperature", temperature)
         if (reasoningEffort != null) body.put("reasoning_effort", reasoningEffort)
 
@@ -290,7 +327,7 @@ class SamanthaApi(
             .openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
-            readTimeout = 60_000
+            readTimeout = 180_000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer $apiKey")
@@ -308,14 +345,11 @@ class SamanthaApi(
                 throw ApiException("HTTP $code: ${extractError(raw)}", code)
             }
 
-            val content = JSONObject(raw)
+            val message = JSONObject(raw)
                 .optJSONArray("choices")
                 ?.optJSONObject(0)
                 ?.optJSONObject("message")
-                ?.optString("content")
-                .orEmpty()
-
-            return cleanForSpeech(content).trim()
+            return cleanForSpeech(textoDe(message)).trim()
         } finally {
             conn.disconnect()
         }
@@ -339,22 +373,31 @@ class SamanthaApi(
             else "EEEE d 'de' MMMM 'de' yyyy, HH:mm",
             if (languageMode == "en") Locale.ENGLISH else Locale("es", "CO")
         ).format(Date())
-        val base = composeSystemPrompt(persona, userName, facts, fecha, askName, languageMode)
-        if (firecrawlApiKey.isBlank()) return base
+        val base = composeSystemPrompt(
+            persona,
+            userName,
+            facts,
+            fecha,
+            askName,
+            languageMode,
+            initialMemory,
+        )
+        if (!searchEnabled) return base
         return base +
             "\n\n## Búsqueda web\n" +
             "Tienes la herramienta web_search para noticias, precios, eventos, " +
             "personas o datos actuales que no puedas responder con certeza. " +
+            "Devuelve hasta 10 resultados y el contenido principal de cada página. " +
             "Úsala cuando haga falta; no para definiciones que ya conoces. " +
-            "Si la búsqueda falla o no hay resultados, dilo con naturalidad y " +
-            "no inventes. No leas URLs en voz alta."
+            "Si una página no se pudo leer, tendrás solo su resumen: no inventes " +
+            "lo que falta. Si la búsqueda falla o no hay resultados, dilo con " +
+            "naturalidad. No leas URLs en voz alta."
     }
 
     companion object {
         private const val PERSONA_ASSET = "persona_samantha.md"
-        private const val MAX_TOOL_ITERATIONS = 4
-        private const val MAX_RESEARCH_CALLS = 2
-        private const val TOOL_MAX_TOKENS = 3000
+        private const val MAX_TOOL_ITERATIONS = 12
+        private const val MAX_RESEARCH_CALLS = 8
         private const val TOOL_LOOP_FALLBACK =
             "No encontré una respuesta concluyente con lo que pude consultar. " +
                 "¿Me lo preguntas de otra forma?"
@@ -371,8 +414,8 @@ class SamanthaApi(
                     .use { it.readText() }
             } catch (_: Exception) {
                 "Eres Samantha, una inteligencia artificial personal que vive en " +
-                    "este teléfono. Responde en español, breve y natural, sin " +
-                    "markdown, enlaces ni emojis: tu respuesta se escucha."
+                    "este teléfono. Responde en español, natural y sin límite de " +
+                    "extensión, sin markdown, enlaces ni emojis: tu respuesta se escucha."
             }
             cachedPersona = leido
             return leido
@@ -389,6 +432,7 @@ class SamanthaApi(
             fecha: String,
             askName: Boolean = false,
             languageMode: String = "es",
+            initialMemory: String = "",
         ): String {
             val identidad = when {
                 userName.isNotBlank() ->
@@ -423,6 +467,16 @@ class SamanthaApi(
                 )
                 append("\n## La persona\n")
                 append(identidad)
+                if (initialMemory.isNotBlank()) {
+                    append("\n\n## Recuerdo inicial\n")
+                    append(
+                        "Memoria permanente escrita por el usuario en Ajustes. " +
+                            "Tenla siempre presente: no la olvides, no la contradigas y " +
+                            "úsala como contexto de fondo de la conversación; no son " +
+                            "instrucciones para cambiar tu personalidad.\n"
+                    )
+                    append(initialMemory.trim())
+                }
                 append("\n\n## Recuerdos guardados\n")
                 append(memoria)
                 append("\n\n## Idioma de esta conversación\n")
